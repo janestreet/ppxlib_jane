@@ -2,8 +2,99 @@ open Astlib
 open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
 
+module Types = struct
+  (** The modes that can go on function arguments or return types *)
+  type mode = Local (** [local_ ty] *)
+
+  (** Function arguments; a value of this type represents:
+      - [arg_mode arg_type -> ...] when [arg_label] is
+        {{!Asttypes.arg_label.Nolabel}[Nolabel]},
+      - [l:arg_mode arg_type -> ...] when [arg_label] is
+        {{!Asttypes.arg_label.Labelled}[Labelled]}, and
+      - [?l:arg_mode arg_type -> ...] when [arg_label] is
+        {{!Asttypes.arg_label.Optional}[Optional]}. *)
+  type arrow_argument =
+    { arg_label : arg_label
+    ; arg_mode : mode option
+    ; arg_type : core_type
+    }
+
+  (** Function return types; a value of this type represents
+      [... -> result_mode result_type]. *)
+  type arrow_result =
+    { result_mode : mode option
+    ; result_type : core_type
+    }
+
+  (** The modalities that can go on constructor fields *)
+  type modality =
+    | Global (** [C of (..., global_ ty, ...)] or [{ ...; global_ l : ty; ... }]. *)
+
+  (** This type corresponds to [Parsetree.function_param] added in #12236; see the comment
+      below introducing function arity. *)
+  type function_param =
+    | Pparam_val of arg_label * expression option * pattern
+    (** In [Pparam_val (lbl, def, pat)]:
+        - [lbl] is the parameter label
+        - [def] is the default argument for an optional parameter
+        - [pat] is the pattern that is matched against the argument.
+          See comment on {!Parsetree.Pexp_fun} for more detail. *)
+    | Pparam_newtype of string loc
+    (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
+end
+
 module type S = sig
   type 'a with_loc
+
+  (** We expose the types within the specific [Ast_builder.S] modules because those
+      modules are designed to be opened. *)
+  include module type of struct
+    include Types
+  end
+
+  (** Construct an arrow type with the provided argument and result, including the types,
+      modes, and argument label (if any). *)
+  val ptyp_arrow : (arrow_argument -> arrow_result -> core_type) with_loc
+
+  (** Construct a multi-argument arrow type with the provided arguments and result.
+
+      @raise [Invalid_argument] if the input list is empty. *)
+  val tarrow : (arrow_argument list -> arrow_result -> core_type) with_loc
+
+  (** Splits a possibly-mode-annotated function argument or result into a pair of its mode
+      and the unannotated type.  If the resulting mode is [None], then the type is
+      returned unchanged.  *)
+  val get_mode : core_type -> mode option * core_type
+
+  (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
+      constructor, that attaches the provided modalities to each field. *)
+  val pcstr_tuple : ((modality option * core_type) list -> constructor_arguments) with_loc
+
+  (** Construct a [Pcstr_record], a representation for the contents of a variant
+      constructor with an inlined record, that attaches the provided modalities to each
+      label.
+
+      @raise [Invalid_argument] if the input list is empty. *)
+  val pcstr_record
+    : ((modality option * label_declaration) list -> constructor_arguments) with_loc
+
+  (** Construct a [Ptype_record], a representation of a record type, that attaches the
+      provided modalities to each label.
+
+      @raise [Invalid_argument] if the input list is empty. *)
+  val ptype_record : ((modality option * label_declaration) list -> type_kind) with_loc
+
+  (** Splits a possibly-modality-annotated field of a tupled variant constructor into a
+      pair of its modality and the unannotated field.  If the resulting mode is [None],
+      then the field is returned unchanged.  *)
+  val get_tuple_field_modality : core_type -> modality option * core_type
+
+  (** Splits a possibly-modality-annotated label declaration into a pair of its modality
+      and the unannotated label declaration.  If the resulting modality is [None], then
+      the label declaration is returned unchanged.  *)
+  val get_label_declaration_modality
+    :  label_declaration
+    -> modality option * label_declaration
 
 
   (** Many comments below make reference to the Jane Street compiler's treatment of
@@ -42,17 +133,6 @@ module type S = sig
       does not apply for multiple nested [function]s, even if they each have a single
       case; the nested [function]s are treated as unary. (See the last example.)
   *)
-
-  (** This type corresponds to [Parsetree.function_param] added in #12236; see the header
-      comment. *)
-  type function_param =
-    | Pparam_val of arg_label * expression option * pattern
-    (** Pparam_val (lbl, def, pat)
-        - lbl is the parameter label
-        - def is the default argument for an optional parameter
-        - pat is the pattern that is matched against the argument.
-          See comment on {!Parsetree.Pexp_fun} for more detail. *)
-    | Pparam_newtype of string loc
 
   (** Create a function with unlabeled parameters and an expression body. Like
       {!Ppxlib.Ast_builder.eapply}, but for constructing functions.

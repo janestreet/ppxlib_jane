@@ -1,3 +1,0 @@
-(library (name ppxlib_jane_test)
- (libraries ppxlib_jane core expect_test_helpers_core)
- (preprocess (pps ppxlib.metaquot ppx_jane)))
