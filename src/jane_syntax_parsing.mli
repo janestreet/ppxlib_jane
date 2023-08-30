@@ -189,8 +189,7 @@ module type AST = sig
         extended pattern AST, this function will return [None] if it spots an
         embedding that claims to be from [Language_extension Comprehensions].)
     *)
-    -> ast
-    -> 'a option
+    -> (ast -> 'a option)
 end
 
 module Expression : AST with type ast = Parsetree.expression

@@ -757,7 +757,7 @@ module type AST = sig
 
   val make_jane_syntax : Feature.t -> string list -> ?payload:payload -> ast -> ast
   val make_entire_jane_syntax : loc:Location.t -> Feature.t -> (unit -> ast) -> ast
-  val make_of_ast : of_ast_internal:(Feature.t -> ast -> 'a option) -> ast -> 'a option
+  val make_of_ast : of_ast_internal:(Feature.t -> ast -> 'a option) -> (ast -> 'a option)
 end
 
 (* See Note [Hiding internal details] *)
