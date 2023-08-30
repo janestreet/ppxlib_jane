@@ -34,13 +34,13 @@ module Types = struct
       below introducing function arity. *)
   type function_param =
     | Pparam_val of arg_label * expression option * pattern
-    (** In [Pparam_val (lbl, def, pat)]:
+        (** In [Pparam_val (lbl, def, pat)]:
         - [lbl] is the parameter label
         - [def] is the default argument for an optional parameter
         - [pat] is the pattern that is matched against the argument.
           See comment on {!Parsetree.Pexp_fun} for more detail. *)
     | Pparam_newtype of string loc
-    (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
+        (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
 end
 
 module type S = sig
@@ -95,7 +95,6 @@ module type S = sig
   val get_label_declaration_modality
     :  label_declaration
     -> modality option * label_declaration
-
 
   (** Many comments below make reference to the Jane Street compiler's treatment of
       function arity. These comments refer to a parsetree change made to upstream OCaml in
@@ -169,7 +168,6 @@ module type S = sig
   *)
   val fun_param : arg_label -> pattern -> function_param
 
-
   (** Say an expression is a "function" if it is a [Pexp_fun] or a [Pexp_function].
       All functions have parameters and arity.
 
@@ -204,8 +202,8 @@ module type Ast_builder = sig
   module Default : S_with_explicit_loc
 
   module Make (Loc : sig
-      val loc : Location.t
-    end) : S_with_implicit_loc
+    val loc : Location.t
+  end) : S_with_implicit_loc
 
   val make : Location.t -> (module S_with_implicit_loc)
 end

@@ -9,7 +9,10 @@
     directly imported into [ppxlib_jane].
 *)
 
-type maturity = Stable | Beta | Alpha
+type maturity =
+  | Stable
+  | Beta
+  | Alpha
 
 (** The type of language extensions. An ['a t] is an extension that can either
     be off or be set to have any value in ['a], so a [unit t] can be either on
@@ -29,15 +32,18 @@ module Exist : sig
   type t = Pack : _ extn -> t
 
   val all : t list
-end with type 'a extn := 'a t
+end
+with type 'a extn := 'a t
 
 module Exist_pair : sig
   type 'a extn = 'a t
   type t = Pair : 'a extn * 'a -> t
-end with type 'a extn := 'a t
+end
+with type 'a extn := 'a t
 
 (** Print and parse language extensions; parsing is case-insensitive *)
 val to_string : _ t -> string
+
 val of_string : string -> Exist.t option
 val pair_of_string : string -> Exist_pair.t option
 val maturity_to_string : maturity -> string
@@ -62,5 +68,6 @@ module type Language_extension_for_jane_syntax = sig
 
   (** Check if a language extension is currently enabled. *)
   val is_enabled : _ t -> bool
+
   val is_at_least : 'a t -> 'a -> bool
 end

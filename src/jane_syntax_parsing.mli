@@ -114,7 +114,6 @@ end
     also why we don't expose any functions for rendering or parsing these names;
     that's all handled internally. *)
 module Embedded_name : sig
-
   (** A nonempty list of name components, without the first two components.
       (That is, without the leading root component that identifies it as part of
       the modular syntax mechanism, and without the next component that
@@ -167,11 +166,7 @@ module type AST = sig
       sets [Ast_helper.default_loc] locally to the [ghost] version of the
       provided location, which is why the [ast] is generated from a function
       call; it is during this call that the location is so set. *)
-  val make_entire_jane_syntax
-    :  loc:Location.t
-    -> Feature.t
-    -> (unit -> ast)
-    -> ast
+  val make_entire_jane_syntax : loc:Location.t -> Feature.t -> (unit -> ast) -> ast
 
   (** Build an [of_ast] function. The return value of this function should be
       used to implement [of_ast] in modules satisfying the signature
@@ -184,7 +179,7 @@ module type AST = sig
   *)
   val make_of_ast
     :  of_ast_internal:(Feature.t -> ast -> 'a option)
-    (** A function to convert [Parsetree]'s AST to our novel extended one.  The
+         (** A function to convert [Parsetree]'s AST to our novel extended one.  The
         choice of feature and the piece of syntax will both be extracted from
         the embedding by the first argument.
 
@@ -194,35 +189,19 @@ module type AST = sig
         extended pattern AST, this function will return [None] if it spots an
         embedding that claims to be from [Language_extension Comprehensions].)
     *)
-    -> (ast -> 'a option)
+    -> ast
+    -> 'a option
 end
 
-module Expression :
-  AST with type ast = Parsetree.expression
-
-module Pattern :
-  AST with type ast = Parsetree.pattern
-
-module Module_type :
-  AST with type ast = Parsetree.module_type
-
-module Signature_item :
-  AST with type ast = Parsetree.signature_item
-
-module Structure_item :
-  AST with type ast = Parsetree.structure_item
-
-module Core_type :
-  AST with type ast = Parsetree.core_type
-
-module Constructor_argument :
-  AST with type ast = Parsetree.core_type
-
-module Extension_constructor :
-  AST with type ast = Parsetree.extension_constructor
-
-module Constructor_declaration :
-  AST with type ast = Parsetree.constructor_declaration
+module Expression : AST with type ast = Parsetree.expression
+module Pattern : AST with type ast = Parsetree.pattern
+module Module_type : AST with type ast = Parsetree.module_type
+module Signature_item : AST with type ast = Parsetree.signature_item
+module Structure_item : AST with type ast = Parsetree.structure_item
+module Core_type : AST with type ast = Parsetree.core_type
+module Constructor_argument : AST with type ast = Parsetree.core_type
+module Extension_constructor : AST with type ast = Parsetree.extension_constructor
+module Constructor_declaration : AST with type ast = Parsetree.constructor_declaration
 
 (** Require that an extension is enabled for at least the provided level, or
     else throw an exception (of an abstract type) at the provided location
@@ -230,8 +209,7 @@ module Constructor_declaration :
     certain piece of syntax requires two extensions to be enabled at once (e.g.,
     immutable array comprehensions such as [[:x for x = 1 to 10:]], which
     require both [Comprehensions] and [Immutable_arrays]). *)
-val assert_extension_enabled :
-  loc:Location.t -> 'a Language_extension.t -> 'a -> unit
+val assert_extension_enabled : loc:Location.t -> 'a Language_extension.t -> 'a -> unit
 
 (** Extracts the first attribute (in list order) that was inserted by the
     Jane Syntax framework, and returns the rest of the attributes in the
@@ -242,14 +220,16 @@ val assert_extension_enabled :
     order to process a Jane Syntax element that consists of multiple
     nested ASTs.
 *)
-val find_and_remove_jane_syntax_attribute :
-  Parsetree.attributes ->
-  (Embedded_name.t * Location.t *
-   Parsetree.payload * Parsetree.attributes) option
+val find_and_remove_jane_syntax_attribute
+  :  Parsetree.attributes
+  -> (Embedded_name.t * Location.t * Parsetree.payload * Parsetree.attributes) option
 
 (** Creates an attribute used for encoding syntax from the given [Feature.t] *)
-val make_jane_syntax_attribute :
-  Feature.t -> string list -> Parsetree.payload -> Parsetree.attribute
+val make_jane_syntax_attribute
+  :  Feature.t
+  -> string list
+  -> Parsetree.payload
+  -> Parsetree.attribute
 
 (** Errors around the representation of our extended ASTs.  These should mostly
     just be fatal, but they're needed for one test case

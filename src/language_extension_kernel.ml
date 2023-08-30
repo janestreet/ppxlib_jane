@@ -2,7 +2,10 @@
    OCaml compiler. Don't make changes directly to this file. *)
 [@@@ocaml.warning "-missing-record-field-pattern"]
 
-type maturity = Stable | Beta | Alpha
+type maturity =
+  | Stable
+  | Beta
+  | Alpha
 
 (* Remember to update [all] when changing this type. *)
 type _ t =
@@ -30,6 +33,7 @@ module Exist = struct
     ; Pack Layouts
     ; Pack SIMD
     ]
+  ;;
 end
 
 module Exist_pair = struct
@@ -46,6 +50,7 @@ let to_string : type a. a t -> string = function
   | Module_strengthening -> "module_strengthening"
   | Layouts -> "layouts"
   | SIMD -> "simd"
+;;
 
 (* converts full extension names, like "layouts_alpha" to a pair of
    an extension and its maturity. For extensions that don't take an
@@ -64,29 +69,30 @@ let pair_of_string extn_name : Exist_pair.t option =
   | "layouts_beta" -> Some (Pair (Layouts, Beta))
   | "simd" -> Some (Pair (SIMD, ()))
   | _ -> None
+;;
 
 let maturity_to_string = function
   | Alpha -> "alpha"
   | Beta -> "beta"
   | Stable -> "stable"
+;;
 
 let of_string extn_name : Exist.t option =
   match pair_of_string extn_name with
   | Some (Pair (ext, _)) -> Some (Pack ext)
   | None -> None
+;;
 
 (* We'll do this in a more principled way later. *)
 let is_erasable : type a. a t -> bool = function
-  | Local
-  | Layouts ->
-      true
+  | Local | Layouts -> true
   | Comprehensions
   | Include_functor
   | Polymorphic_parameters
   | Immutable_arrays
   | Module_strengthening
-  | SIMD ->
-      false
+  | SIMD -> false
+;;
 
 (* See the mli. *)
 module type Language_extension_for_jane_syntax = sig

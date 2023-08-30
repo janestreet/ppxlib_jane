@@ -30,44 +30,46 @@
 (** The ASTs for list and array comprehensions *)
 module Comprehensions : sig
   type iterator =
-    | Range of { start     : Parsetree.expression
-               ; stop      : Parsetree.expression
-               ; direction : Asttypes.direction_flag }
-    (** "= START to STOP" (direction = Upto)
+    | Range of
+        { start : Parsetree.expression
+        ; stop : Parsetree.expression
+        ; direction : Asttypes.direction_flag
+        }
+        (** "= START to STOP" (direction = Upto)
         "= START downto STOP" (direction = Downto) *)
-    | In of Parsetree.expression
-    (** "in EXPR" *)
+    | In of Parsetree.expression (** "in EXPR" *)
 
   (* In [Typedtree], the [pattern] moves into the [iterator]. *)
+
+  (** [@...] PAT (in/=) ... *)
   type clause_binding =
-    { pattern    : Parsetree.pattern
-    ; iterator   : iterator
-    ; attributes : Parsetree.attribute list }
-    (** [@...] PAT (in/=) ... *)
+    { pattern : Parsetree.pattern
+    ; iterator : iterator
+    ; attributes : Parsetree.attribute list
+    }
 
   type clause =
     | For of clause_binding list
-    (** "for PAT (in/=) ... and PAT (in/=) ... and ..."; must be nonempty *)
-    | When of Parsetree.expression
-    (** "when EXPR" *)
+        (** "for PAT (in/=) ... and PAT (in/=) ... and ..."; must be nonempty *)
+    | When of Parsetree.expression (** "when EXPR" *)
 
   type comprehension =
-    { body : Parsetree.expression
-    (** The body/generator of the comprehension *)
-    ; clauses : clause list
-    (** The clauses of the comprehension; must be nonempty *) }
+    { body : Parsetree.expression (** The body/generator of the comprehension *)
+    ; clauses : clause list (** The clauses of the comprehension; must be nonempty *)
+    }
 
   type expression =
-    | Cexp_list_comprehension  of comprehension
-    (** [BODY ...CLAUSES...] *)
+    | Cexp_list_comprehension of comprehension (** [BODY ...CLAUSES...] *)
     | Cexp_array_comprehension of Asttypes.mutable_flag * comprehension
-    (** [|BODY ...CLAUSES...|] (flag = Mutable)
+        (** [|BODY ...CLAUSES...|] (flag = Mutable)
         [:BODY ...CLAUSES...:] (flag = Immutable)
           (only allowed with [-extension immutable_arrays]) *)
 
-  val expr_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    expression -> Parsetree.expression
+  val expr_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> expression
+    -> Parsetree.expression
 end
 
 (** The ASTs for immutable arrays.  When we merge this upstream, we'll merge
@@ -75,30 +77,30 @@ end
     [mutable_flag] argument (just as we did with [T{exp,pat}_array]). *)
 module Immutable_arrays : sig
   type expression =
-    | Iaexp_immutable_array of Parsetree.expression list
-    (** [: E1; ...; En :] *)
+    | Iaexp_immutable_array of Parsetree.expression list (** [: E1; ...; En :] *)
 
   type pattern =
-    | Iapat_immutable_array of Parsetree.pattern list
-    (** [: P1; ...; Pn :] **)
+    | Iapat_immutable_array of Parsetree.pattern list (** [: P1; ...; Pn :] **)
 
-  val expr_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    expression -> Parsetree.expression
-  val pat_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    pattern -> Parsetree.pattern
+  val expr_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> expression
+    -> Parsetree.expression
+
+  val pat_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> pattern
+    -> Parsetree.pattern
 end
 
 (** The ASTs for [include functor].  When we merge this upstream, we'll merge
     these into the existing [P{sig,str}_include] constructors (similar to what
     we did with [T{sig,str}_include], but without depending on typechecking). *)
 module Include_functor : sig
-  type signature_item =
-    | Ifsig_include_functor of Parsetree.include_description
-
-  type structure_item =
-    | Ifstr_include_functor of Parsetree.include_declaration
+  type signature_item = Ifsig_include_functor of Parsetree.include_description
+  type structure_item = Ifstr_include_functor of Parsetree.include_declaration
 
   val sig_item_of : loc:Location.t -> signature_item -> Parsetree.signature_item
   val str_item_of : loc:Location.t -> structure_item -> Parsetree.structure_item
@@ -107,11 +109,15 @@ end
 (** The ASTs for module type strengthening. *)
 module Strengthen : sig
   type module_type =
-    { mty : Parsetree.module_type; mod_id : Longident.t Location.loc }
+    { mty : Parsetree.module_type
+    ; mod_id : Longident.t Location.loc
+    }
 
-  val mty_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    module_type -> Parsetree.module_type
+  val mty_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> module_type
+    -> Parsetree.module_type
 end
 
 (** The ASTs for layouts and other unboxed-types features *)
@@ -124,7 +130,6 @@ module Layouts : sig
     (* examples: [ #2.0 ] or [ #42L ] *)
     (* This is represented as an attribute wrapping a [Pexp_constant] node. *)
     | Lexp_constant of constant
-
     (* [fun (type a : immediate) -> ...] *)
     (* This is represented as an attribute wrapping a [Pexp_newtype] node. *)
     | Lexp_newtype of
@@ -139,9 +144,10 @@ module Layouts : sig
     (* ['a : immediate] or [_ : float64] *)
     (* This is represented by an attribute wrapping either a [Ptyp_any] or
        a [Ptyp_var] node. *)
-    | Ltyp_var of { name : string option
-                  ; layout : Asttypes.layout_annotation }
-
+    | Ltyp_var of
+        { name : string option
+        ; layout : Asttypes.layout_annotation
+        }
     (* [('a : immediate) 'b 'c ('d : value). 'a -> 'b -> 'c -> 'd] *)
     (* This is represented by an attribute wrapping a [Ptyp_poly] node. *)
     (* This is used instead of [Ptyp_poly] only where there is at least one
@@ -149,66 +155,78 @@ module Layouts : sig
        annotations at all, [Ptyp_poly] is used instead. This saves space in the
        parsed representation and guarantees that we don't accidentally try to
        require the layouts extension. *)
-    | Ltyp_poly of { bound_vars : (string Location.loc *
-                                   Asttypes.layout_annotation option) list
-                   ; inner_type : Parsetree.core_type }
-
+    | Ltyp_poly of
+        { bound_vars : (string Location.loc * Asttypes.layout_annotation option) list
+        ; inner_type : Parsetree.core_type
+        }
     (* [ty as ('a : immediate)] *)
     (* This is represented by an attribute wrapping either a [Ptyp_alias] node
        or, in the [ty as (_ : layout)] case, the annotated type itself, with no
        intervening [type_desc]. *)
-    | Ltyp_alias of { aliased_type : Parsetree.core_type
-                    ; name : string option
-                    ; layout : Asttypes.layout_annotation }
+    | Ltyp_alias of
+        { aliased_type : Parsetree.core_type
+        ; name : string option
+        ; layout : Asttypes.layout_annotation
+        }
 
   type nonrec extension_constructor =
     (* [ 'a ('b : immediate) ('c : float64). 'a * 'b * 'c -> exception ] *)
     (* This is represented as an attribute on a [Pext_decl] node. *)
     (* Like [Ltyp_poly], this is used only when there is at least one layout
        annotation. Otherwise, we will have a [Pext_decl]. *)
-    | Lext_decl of (string Location.loc *
-                    Asttypes.layout_annotation option) list *
-                   Parsetree.constructor_arguments *
-                   Parsetree.core_type option
+    | Lext_decl of
+        (string Location.loc * Asttypes.layout_annotation option) list
+        * Parsetree.constructor_arguments
+        * Parsetree.core_type option
 
-  val expr_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    expression -> Parsetree.expression
+  val expr_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> expression
+    -> Parsetree.expression
 
-  val pat_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    pattern -> Parsetree.pattern
+  val pat_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> pattern
+    -> Parsetree.pattern
 
-  val type_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    core_type -> Parsetree.core_type
+  val type_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> core_type
+    -> Parsetree.core_type
 
-  val extension_constructor_of :
-    loc:Location.t ->
-    name:string Location.loc ->
-    attrs:Parsetree.attributes ->
-    ?info:Docstrings.info ->
-    ?docs:Docstrings.docs ->
-    extension_constructor ->
-    Parsetree.extension_constructor
+  val extension_constructor_of
+    :  loc:Location.t
+    -> name:string Location.loc
+    -> attrs:Parsetree.attributes
+    -> ?info:Docstrings.info
+    -> ?docs:Docstrings.docs
+    -> extension_constructor
+    -> Parsetree.extension_constructor
 
   (** See also [Ast_helper.Type.constructor], which is a direct inspiration for
       the interface here. It's meant to be able to be a drop-in replacement.  *)
-  val constructor_declaration_of :
-    loc:Location.t -> attrs:Parsetree.attributes -> info:Docstrings.info ->
-    vars_layouts:(string Location.loc *
-                  Asttypes.layout_annotation option) list ->
-    args:Parsetree.constructor_arguments -> res:Parsetree.core_type option ->
-    string Location.loc -> Parsetree.constructor_declaration
+  val constructor_declaration_of
+    :  loc:Location.t
+    -> attrs:Parsetree.attributes
+    -> info:Docstrings.info
+    -> vars_layouts:(string Location.loc * Asttypes.layout_annotation option) list
+    -> args:Parsetree.constructor_arguments
+    -> res:Parsetree.core_type option
+    -> string Location.loc
+    -> Parsetree.constructor_declaration
 
   (** Extract the layouts from a [constructor_declaration]; returns leftover
       attributes along with the annotated variables. Unlike other pieces
       of jane-syntax, users of this function will still have to process
       the remaining pieces of the original [constructor_declaration]. *)
-  val of_constructor_declaration :
-    Parsetree.constructor_declaration ->
-    ((string Location.loc * Asttypes.layout_annotation option) list *
-     Parsetree.attributes) option
+  val of_constructor_declaration
+    :  Parsetree.constructor_declaration
+    -> ((string Location.loc * Asttypes.layout_annotation option) list
+       * Parsetree.attributes)
+       option
 end
 
 (******************************************)
@@ -289,12 +307,9 @@ end
 
 (** Novel syntax in types *)
 module Core_type : sig
-  type t =
-    | Jtyp_layout of Layouts.core_type
+  type t = Jtyp_layout of Layouts.core_type
 
-  include AST
-    with type t := t * Parsetree.attributes
-     and type ast := Parsetree.core_type
+  include AST with type t := t * Parsetree.attributes and type ast := Parsetree.core_type
 end
 
 (** Novel syntax in constructor arguments; this isn't a core AST type,
@@ -302,9 +317,7 @@ end
 module Constructor_argument : sig
   type t = |
 
-  include AST
-    with type t := t * Parsetree.attributes
-     and type ast := Parsetree.core_type
+  include AST with type t := t * Parsetree.attributes and type ast := Parsetree.core_type
 end
 
 (** Novel syntax in expressions *)
@@ -314,12 +327,9 @@ module Expression : sig
     | Jexp_immutable_array of Immutable_arrays.expression
     | Jexp_layout of Layouts.expression
 
-  include AST
-    with type t := t * Parsetree.attributes
-     and type ast := Parsetree.expression
+  include AST with type t := t * Parsetree.attributes and type ast := Parsetree.expression
 
-  val expr_of :
-    loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.expression
+  val expr_of : loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.expression
 end
 
 (** Novel syntax in patterns *)
@@ -328,50 +338,48 @@ module Pattern : sig
     | Jpat_immutable_array of Immutable_arrays.pattern
     | Jpat_layout of Layouts.pattern
 
-  include AST
-    with type t := t * Parsetree.attributes
-     and type ast := Parsetree.pattern
+  include AST with type t := t * Parsetree.attributes and type ast := Parsetree.pattern
 
-  val pat_of :
-    loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.pattern
+  val pat_of : loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.pattern
 end
 
 (** Novel syntax in module types *)
 module Module_type : sig
-  type t =
-    | Jmty_strengthen of Strengthen.module_type
+  type t = Jmty_strengthen of Strengthen.module_type
 
-  include AST
-    with type t := t * Parsetree.attributes
-     and type ast := Parsetree.module_type
+  include
+    AST with type t := t * Parsetree.attributes and type ast := Parsetree.module_type
 end
 
 (** Novel syntax in signature items *)
 module Signature_item : sig
-  type t =
-    | Jsig_include_functor of Include_functor.signature_item
+  type t = Jsig_include_functor of Include_functor.signature_item
 
   include AST with type t := t and type ast := Parsetree.signature_item
 end
 
 (** Novel syntax in structure items *)
 module Structure_item : sig
-  type t =
-    | Jstr_include_functor of Include_functor.structure_item
+  type t = Jstr_include_functor of Include_functor.structure_item
 
   include AST with type t := t and type ast := Parsetree.structure_item
 end
 
 (** Novel syntax in extension constructors *)
 module Extension_constructor : sig
-  type t =
-    | Jext_layout of Layouts.extension_constructor
+  type t = Jext_layout of Layouts.extension_constructor
 
-  include AST with type t := t * Parsetree.attributes
-               and type ast := Parsetree.extension_constructor
+  include
+    AST
+      with type t := t * Parsetree.attributes
+       and type ast := Parsetree.extension_constructor
 
-  val extension_constructor_of :
-    loc:Location.t -> name:string Location.loc -> attrs:Parsetree.attributes ->
-    ?info:Docstrings.info -> ?docs:Docstrings.docs -> t ->
-    Parsetree.extension_constructor
+  val extension_constructor_of
+    :  loc:Location.t
+    -> name:string Location.loc
+    -> attrs:Parsetree.attributes
+    -> ?info:Docstrings.info
+    -> ?docs:Docstrings.docs
+    -> t
+    -> Parsetree.extension_constructor
 end

@@ -16,7 +16,6 @@ let core_type ptyp_desc ~loc:ptyp_loc =
 module Default = struct
   include Types
 
-
   let add_extension_attribute ~loc attrs name =
     attrs
     @ [ { attr_name = { txt = "extension." ^ name; loc }
@@ -60,8 +59,8 @@ module Default = struct
         args
         ~init:result_mode_and_type
         ~f:(fun { arg_label; arg_mode; arg_type } arrow_type ->
-          let arg_type = mark_type_with_mode ~loc arg_mode arg_type in
-          core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
+        let arg_type = mark_type_with_mode ~loc arg_mode arg_type in
+        core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
   ;;
 
   let get_mode ty =
@@ -148,7 +147,6 @@ module Default = struct
 
   let unary_function ~loc cases = expression (Pexp_function cases) ~loc
   let fun_param arg_label pattern = Pparam_val (arg_label, None, pattern)
-
   let add_fun_param_internal ~loc param body = n_ary_function ~loc [ param ] body
 
   let add_fun_param ~loc lbl def pat body =
@@ -169,8 +167,8 @@ module Default = struct
 end
 
 module Make (Loc : sig
-    val loc : Location.t
-  end) =
+  val loc : Location.t
+end) =
 struct
   include Default
 
@@ -188,6 +186,6 @@ end
 
 let make loc : (module S_with_implicit_loc) =
   (module Make (struct
-       let loc = loc
-     end))
+    let loc = loc
+  end))
 ;;
