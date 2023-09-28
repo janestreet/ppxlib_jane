@@ -5,8 +5,8 @@ open Stdppx
 include Ast_builder_intf
 include Types
 
-let expression pexp_desc ~loc:pexp_loc =
-  { pexp_desc; pexp_loc; pexp_attributes = []; pexp_loc_stack = [] }
+let expression ?(attrs = []) pexp_desc ~loc:pexp_loc =
+  { pexp_desc; pexp_loc; pexp_attributes = attrs; pexp_loc_stack = [] }
 ;;
 
 let core_type ptyp_desc ~loc:ptyp_loc =
@@ -137,20 +137,26 @@ module Default = struct
     | _ :: _, pld_attributes -> Some Global, { ld with pld_attributes }
   ;;
 
-  let n_ary_function ~(loc : Location.t) params body =
-    List.fold_right params ~init:body ~f:(fun param acc ->
-      match param with
-      | Pparam_val (arg_label, optional_default, pattern) ->
-        expression (Pexp_fun (arg_label, optional_default, pattern, acc)) ~loc
-      | Pparam_newtype newtype -> expression (Pexp_newtype (newtype, acc)) ~loc)
+  let n_ary_function ?(attrs = []) ~(loc : Location.t) params body =
+    let body =
+      List.fold_right params ~init:body ~f:(fun param acc ->
+        match param with
+        | Pparam_val (arg_label, optional_default, pattern) ->
+          expression (Pexp_fun (arg_label, optional_default, pattern, acc)) ~loc
+        | Pparam_newtype newtype -> expression (Pexp_newtype (newtype, acc)) ~loc)
+    in
+    { body with pexp_attributes = body.pexp_attributes @ attrs }
   ;;
 
-  let unary_function ~loc cases = expression (Pexp_function cases) ~loc
+  let unary_function ~loc ?attrs cases = expression ?attrs (Pexp_function cases) ~loc
   let fun_param arg_label pattern = Pparam_val (arg_label, None, pattern)
-  let add_fun_param_internal ~loc param body = n_ary_function ~loc [ param ] body
 
-  let add_fun_param ~loc lbl def pat body =
-    add_fun_param_internal ~loc (Pparam_val (lbl, def, pat)) body
+  let add_fun_param_internal ?attrs ~loc param body =
+    n_ary_function ?attrs ~loc [ param ] body
+  ;;
+
+  let add_fun_param ~loc ?attrs lbl def pat body =
+    add_fun_param_internal ?attrs ~loc (Pparam_val (lbl, def, pat)) body
   ;;
 
   let add_fun_params ~loc params body =
@@ -158,9 +164,11 @@ module Default = struct
       add_fun_param_internal ~loc param body)
   ;;
 
-  let eabstract ~loc ?(coalesce_arity = true) pats body =
+  let coalesce_fun_arity x = x
+
+  let eabstract ~loc ?(coalesce_fun_arity = true) pats body =
     let params = List.map pats ~f:(fun pat -> fun_param Nolabel pat) in
-    if coalesce_arity
+    if coalesce_fun_arity
     then add_fun_params ~loc params body
     else n_ary_function ~loc params body
   ;;
@@ -178,9 +186,13 @@ struct
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
   let pcstr_record labels : constructor_arguments = pcstr_record ~loc labels
   let ptype_record labels : type_kind = ptype_record ~loc labels
-  let eabstract ?coalesce_arity a b : expression = eabstract ~loc ?coalesce_arity a b
-  let unary_function a : expression = unary_function ~loc a
-  let add_fun_param a b c d : expression = add_fun_param ~loc a b c d
+
+  let eabstract ?coalesce_fun_arity a b : expression =
+    eabstract ~loc ?coalesce_fun_arity a b
+  ;;
+
+  let unary_function ?attrs a : expression = unary_function ~loc ?attrs a
+  let add_fun_param ?attrs a b c d : expression = add_fun_param ~loc ?attrs a b c d
   let add_fun_params a b : expression = add_fun_params ~loc a b
 end
 

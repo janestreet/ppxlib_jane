@@ -136,22 +136,22 @@ module type S = sig
   (** Create a function with unlabeled parameters and an expression body. Like
       {!Ppxlib.Ast_builder.eapply}, but for constructing functions.
 
-      [coalesce_arity] is relevant for the Jane Street compiler. By default,
-      [coalesce_arity] is [true].
+      [coalesce_fun_arity] is relevant for the Jane Street compiler. By default,
+      [coalesce_fun_arity] is [true].
 
-      Suppose there is a call [eabstract pats body ~coalesce_arity]
-      - If [colaesce_arity] is true, the arity of the returned function
+      Suppose there is a call [eabstract pats body ~coalesce_fun_arity]
+      - If [colaesce_fun_arity] is [true], the arity of the returned function
         is the same as the arity of:
-        [Fun.add_params (List.map params ~f:(Fun.param Nolabel)) body]
-      - If [coalesce_arity] is [false], then the arity of the returned function
+        [add_fun_params (List.map params ~f:(Fun.param Nolabel)) body]
+      - If [coalesce_fun_arity] is [false], then the arity of the returned function
         is the length of [pats].
 
-      In other words, [coalesce_arity = true] allows you to build up the arity of
+      In other words, [coalesce_fun_arity = true] allows you to build up the arity of
       an already-constructed function rather than necessarily creating a new function.
 
   *)
   val eabstract
-    : (?coalesce_arity:bool -> pattern list -> expression -> expression) with_loc
+    : (?coalesce_fun_arity:bool -> pattern list -> expression -> expression) with_loc
 
   (** [unary_function cases] is [function <cases>]. When used with the Jane Street
       compiler, the function's runtime arity is 1, so the fast path for function
@@ -159,8 +159,11 @@ module type S = sig
       1 argument. To create a function with multiple argument that pattern-matches on
       the last one, use [add_param] or [add_params] to add more parameters.
       Alternatively, use [pexp_function] to provide all parameters at once.
+
+      The attributes of the resulting expression will be the [attrs] argument together
+      with any attributes added by the Jane Street compiler.
   *)
-  val unary_function : (case list -> expression) with_loc
+  val unary_function : (?attrs:attributes -> case list -> expression) with_loc
 
   (** [fun_param lbl pat] is [Pparam_val (lbl, None, pat)]. This gives a more
       self-documenting way of constructing the usual case: value parameters without
@@ -176,17 +179,39 @@ module type S = sig
       - If [e] is a function with arity [n], then [e'] is a function with arity [n+1].
         [param] is added at the outermost layer. For example, if
         [e = fun <params> -> <body>], then [e' = fun <param :: params> -> body].
+        The attributes on the resulting expression will be the [attrs] argument
+        together with any attributes already present on [e].
       - If [e] is not a function, then [e'] is a function with arity [1], namely:
-        [fun <param> -> <e>].
+        [fun <param> -> <e>]. The attributes of the resulting expression will be the
+        [attrs] argument together with any attributes added by the Jane Street compiler.
+
   *)
   val add_fun_param
-    : (arg_label -> expression option -> pattern -> expression -> expression) with_loc
+    : (?attrs:attributes
+       -> arg_label
+       -> expression option
+       -> pattern
+       -> expression
+       -> expression)
+      with_loc
 
   (** [add_params params e] is [List.fold_right params ~init:e ~f:add_param].
       Note the [fold_right]: if [e] is [fun <params'> -> <body>], then
       [add_params params e] is [fun <params @ params'> -> <body>].
   *)
   val add_fun_params : (function_param list -> expression -> expression) with_loc
+
+  (** This operation is a no-op, except as interpreted by the Jane Street compiler.
+      If [e] is a function with arity [n] with an expression body that itself is
+      a function with arity [m], then [coalesce_fun_arity e] is a function of arity
+      [n + m].
+
+      You should usually call [coalesce_fun_arity] on metaquot fun expressions whose body
+      may be a function, e.g.:
+
+      [coalesce_fun_arity [%expr fun x y -> [%e possibly_function]]]
+  *)
+  val coalesce_fun_arity : expression -> expression
 end
 
 module type S_with_implicit_loc = S with type 'a with_loc := 'a
