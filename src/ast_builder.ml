@@ -5,10 +5,6 @@ open Stdppx
 include Ast_builder_intf
 include Types
 
-let expression ?(attrs = []) pexp_desc ~loc:pexp_loc =
-  { pexp_desc; pexp_loc; pexp_attributes = attrs; pexp_loc_stack = [] }
-;;
-
 let core_type ptyp_desc ~loc:ptyp_loc =
   { ptyp_desc; ptyp_loc; ptyp_attributes = []; ptyp_loc_stack = [] }
 ;;
@@ -137,40 +133,91 @@ module Default = struct
     | _ :: _, pld_attributes -> Some Global, { ld with pld_attributes }
   ;;
 
-  let n_ary_function ?(attrs = []) ~(loc : Location.t) params body =
-    let body =
-      List.fold_right params ~init:body ~f:(fun param acc ->
-        match param with
-        | Pparam_val (arg_label, optional_default, pattern) ->
-          expression (Pexp_fun (arg_label, optional_default, pattern, acc)) ~loc
-        | Pparam_newtype newtype -> expression (Pexp_newtype (newtype, acc)) ~loc)
-    in
-    { body with pexp_attributes = body.pexp_attributes @ attrs }
+  let n_ary_function ~loc ~attrs ~params ~ty_constraint ~body =
+    let expr = Jane_syntax.N_ary_functions.expr_of (params, ty_constraint, body) ~loc in
+    match attrs with
+    | [] -> expr
+    | _ :: _ as attrs -> { expr with pexp_attributes = expr.pexp_attributes @ attrs }
   ;;
 
-  let unary_function ~loc ?attrs cases = expression ?attrs (Pexp_function cases) ~loc
-  let fun_param arg_label pattern = Pparam_val (arg_label, None, pattern)
+  let match_n_ary_function ast =
+    match Jane_syntax.Expression.of_ast ast with
+    | Some (Jexp_n_ary_function (params, ty_constraint, body), attrs) ->
+      Some (params, ty_constraint, body, attrs)
+    | _ -> None
+  ;;
 
-  let add_fun_param_internal ?attrs ~loc param body =
-    n_ary_function ?attrs ~loc [ param ] body
+  let unary_function ~loc ?(attrs = []) cases =
+    n_ary_function
+      ~attrs
+      ~params:[]
+      ~ty_constraint:None
+      ~body:(Pfunction_cases (cases, loc, []))
+      ~loc
+  ;;
+
+  let fun_param ~loc arg_label pattern =
+    { pparam_desc = Pparam_val (arg_label, None, pattern); pparam_loc = loc }
+  ;;
+
+  let add_fun_params ~loc ?(attrs = []) new_params body =
+    match new_params with
+    | [] -> body
+    | _ :: _ ->
+      (* If the body is already a function, extend its arity rather than creating a new
+         function.
+      *)
+      (match match_n_ary_function body with
+       | Some (params, ty_constraint, body, existing_attrs) ->
+         n_ary_function
+           ~params:(new_params @ params)
+           ~ty_constraint
+           ~body
+           ~loc
+           ~attrs:(existing_attrs @ attrs)
+       | None ->
+         n_ary_function
+           ~params:new_params
+           ~ty_constraint:None
+           ~body:(Pfunction_body body)
+           ~loc
+           ~attrs)
   ;;
 
   let add_fun_param ~loc ?attrs lbl def pat body =
-    add_fun_param_internal ?attrs ~loc (Pparam_val (lbl, def, pat)) body
+    add_fun_params
+      ?attrs
+      ~loc
+      [ { pparam_desc = Pparam_val (lbl, def, pat); pparam_loc = pat.ppat_loc } ]
+      body
   ;;
 
-  let add_fun_params ~loc params body =
-    List.fold_right params ~init:body ~f:(fun param body ->
-      add_fun_param_internal ~loc param body)
+  let coalesce_fun_arity ast =
+    match match_n_ary_function ast with
+    | None | Some (_, Some _, _, _) | Some (_, _, Pfunction_cases _, _) -> ast
+    | Some (params1, None, Pfunction_body outer_body, outer_attrs) ->
+      (match match_n_ary_function outer_body with
+       | Some (params2, ty_constraint, inner_body, []) ->
+         n_ary_function
+           ~params:(params1 @ params2)
+           ~ty_constraint
+           ~body:inner_body
+           ~loc:ast.pexp_loc
+           ~attrs:outer_attrs
+       | Some (_, _, _, _ :: _) | None -> ast)
   ;;
-
-  let coalesce_fun_arity x = x
 
   let eabstract ~loc ?(coalesce_fun_arity = true) pats body =
-    let params = List.map pats ~f:(fun pat -> fun_param Nolabel pat) in
+    let params = List.map pats ~f:(fun pat -> fun_param ~loc:pat.ppat_loc Nolabel pat) in
     if coalesce_fun_arity
     then add_fun_params ~loc params body
-    else n_ary_function ~loc params body
+    else
+      n_ary_function
+        ~loc
+        ~params
+        ~ty_constraint:None
+        ~body:(Pfunction_body body)
+        ~attrs:[]
   ;;
 end
 
@@ -191,9 +238,10 @@ struct
     eabstract ~loc ?coalesce_fun_arity a b
   ;;
 
+  let fun_param a b : function_param = fun_param ~loc a b
   let unary_function ?attrs a : expression = unary_function ~loc ?attrs a
   let add_fun_param ?attrs a b c d : expression = add_fun_param ~loc ?attrs a b c d
-  let add_fun_params a b : expression = add_fun_params ~loc a b
+  let add_fun_params ?attrs a b : expression = add_fun_params ~loc ?attrs a b
 end
 
 let make loc : (module S_with_implicit_loc) =

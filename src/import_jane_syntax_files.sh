@@ -18,8 +18,12 @@ FILE_PATHS=(
   "ocaml/parsing/jane_syntax.mli"
   "ocaml/parsing/jane_syntax_parsing.ml"
   "ocaml/parsing/jane_syntax_parsing.mli"
+  "ocaml/parsing/jane_asttypes.mli"
   "ocaml/utils/language_extension_kernel.mli"
   "ocaml/utils/language_extension_kernel.ml"
+)
+MLIS_WITHOUT_IMPLEMENTATIONS=(
+  "ocaml/parsing/jane_asttypes.mli"
 )
 
 temp_repo=$(mktemp -d)
@@ -40,3 +44,7 @@ for file_path in "${FILE_PATHS[@]}"; do
 done
 
 rm -rf "$temp_repo"
+
+for mli_path in "${MLIS_WITHOUT_IMPLEMENTATIONS[@]}"; do
+  cp "$(basename "$mli_path")" "$(basename "$mli_path" .mli).ml"
+done

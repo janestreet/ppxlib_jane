@@ -32,15 +32,20 @@ module Types = struct
 
   (** This type corresponds to [Parsetree.function_param] added in #12236; see the comment
       below introducing function arity. *)
-  type function_param =
+  type function_param_desc = Jane_syntax.N_ary_functions.function_param_desc =
     | Pparam_val of arg_label * expression option * pattern
         (** In [Pparam_val (lbl, def, pat)]:
         - [lbl] is the parameter label
         - [def] is the default argument for an optional parameter
         - [pat] is the pattern that is matched against the argument.
           See comment on {!Parsetree.Pexp_fun} for more detail. *)
-    | Pparam_newtype of string loc
+    | Pparam_newtype of string loc * Jane_asttypes.layout_annotation option
         (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
+
+  type function_param = Jane_syntax.N_ary_functions.function_param =
+    { pparam_desc : function_param_desc
+    ; pparam_loc : Location.t
+    }
 end
 
 module type S = sig
@@ -169,7 +174,7 @@ module type S = sig
       self-documenting way of constructing the usual case: value parameters without
       optional argument defaults.
   *)
-  val fun_param : arg_label -> pattern -> function_param
+  val fun_param : (arg_label -> pattern -> function_param) with_loc
 
   (** Say an expression is a "function" if it is a [Pexp_fun] or a [Pexp_function].
       All functions have parameters and arity.
@@ -199,7 +204,8 @@ module type S = sig
       Note the [fold_right]: if [e] is [fun <params'> -> <body>], then
       [add_params params e] is [fun <params @ params'> -> <body>].
   *)
-  val add_fun_params : (function_param list -> expression -> expression) with_loc
+  val add_fun_params
+    : (?attrs:attributes -> function_param list -> expression -> expression) with_loc
 
   (** This operation is a no-op, except as interpreted by the Jane Street compiler.
       If [e] is a function with arity [n] with an expression body that itself is

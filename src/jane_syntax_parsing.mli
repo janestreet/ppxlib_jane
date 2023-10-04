@@ -211,7 +211,7 @@ module Constructor_declaration : AST with type ast = Parsetree.constructor_decla
     require both [Comprehensions] and [Immutable_arrays]). *)
 val assert_extension_enabled : loc:Location.t -> 'a Language_extension.t -> 'a -> unit
 
-(** Extracts the first attribute (in list order) that was inserted by the
+(** Extracts the last attribute (in list order) that was inserted by the
     Jane Syntax framework, and returns the rest of the attributes in the
     same relative order as was input, along with the location of the removed
     attribute and its payload.
