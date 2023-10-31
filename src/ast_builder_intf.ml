@@ -39,7 +39,7 @@ module Types = struct
         - [def] is the default argument for an optional parameter
         - [pat] is the pattern that is matched against the argument.
           See comment on {!Parsetree.Pexp_fun} for more detail. *)
-    | Pparam_newtype of string loc * Jane_asttypes.layout_annotation option
+    | Pparam_newtype of string loc * Jane_asttypes.jkind_annotation option
         (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
 
   type function_param = Jane_syntax.N_ary_functions.function_param =
@@ -65,6 +65,10 @@ module type S = sig
 
       @raise [Invalid_argument] if the input list is empty. *)
   val tarrow : (arrow_argument list -> arrow_result -> core_type) with_loc
+
+  (** As [tarrow], but will return the result if the input list is empty rather than
+      erroring; this means the result type cannot have a mode annotation. *)
+  val tarrow_maybe : (arrow_argument list -> core_type -> core_type) with_loc
 
   (** Splits a possibly-mode-annotated function argument or result into a pair of its mode
       and the unannotated type.  If the resulting mode is [None], then the type is

@@ -59,6 +59,12 @@ module Default = struct
         core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
   ;;
 
+  let tarrow_maybe ~loc args result_type =
+    match args with
+    | [] -> result_type
+    | _ :: _ -> tarrow ~loc args { result_mode = None; result_type }
+  ;;
+
   let get_mode ty =
     match
       List.partition ty.ptyp_attributes ~f:(function
@@ -230,6 +236,7 @@ struct
   let loc = Loc.loc
   let ptyp_arrow arg res : core_type = ptyp_arrow ~loc arg res
   let tarrow args res : core_type = tarrow ~loc args res
+  let tarrow_maybe args res : core_type = tarrow_maybe ~loc args res
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
   let pcstr_record labels : constructor_arguments = pcstr_record ~loc labels
   let ptype_record labels : type_kind = ptype_record ~loc labels
