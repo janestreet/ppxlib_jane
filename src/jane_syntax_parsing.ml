@@ -2,6 +2,8 @@
    OCaml compiler. Don't make changes directly to this file. *)
 [@@@ocaml.warning "-missing-record-field-pattern"]
 
+open! Shadow_compiler_distribution
+
 (** As mentioned in the .mli file, there are some gory details around the
     particular translation scheme we adopt for moving to and from OCaml ASTs
     ([Parsetree.expression], etc.).  The general idea is that we adopt a scheme

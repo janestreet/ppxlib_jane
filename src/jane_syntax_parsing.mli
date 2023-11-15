@@ -2,6 +2,8 @@
    OCaml compiler. Don't make changes directly to this file. *)
 [@@@ocaml.warning "-missing-record-field-pattern"]
 
+open! Shadow_compiler_distribution
+
 (** This module handles the logic around the syntax of our extensions to OCaml
     for Jane Street, keeping the gory details wrapped up behind a clean
     interface.

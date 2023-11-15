@@ -38,6 +38,7 @@ for file_path in "${FILE_PATHS[@]}"; do
     echo '(*_ This file is manually imported from the Jane Street version of the'
     echo '   OCaml compiler. Don'\''t make changes directly to this file. *)'
     echo '[@@@ocaml.warning "-missing-record-field-pattern"]'
+    echo 'open! Shadow_compiler_distribution'
     echo
     sed < "$temp_repo/$file_path" 's/(\* CR/(* JS-only/g'
   } > "$(basename "$file_path")"

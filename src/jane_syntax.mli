@@ -2,6 +2,8 @@
    OCaml compiler. Don't make changes directly to this file. *)
 [@@@ocaml.warning "-missing-record-field-pattern"]
 
+open! Shadow_compiler_distribution
+
 (** Syntax for Jane Street's novel syntactic features.  This module provides
     three things:
 
