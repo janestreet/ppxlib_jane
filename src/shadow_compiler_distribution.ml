@@ -7,17 +7,10 @@
 
 module Parsetree = Ppxlib_ast.Parsetree
 module Asttypes = Ppxlib_ast.Asttypes
-module Pprintast = Astlib.Pprintast
+module Pprintast = Ppxlib_ast.Pprintast
 
 module Ast_helper = struct
   include Ppxlib_ast.Ast_helper
-
-  module Exp = struct
-    include Exp
-
-    let fun_ = (fun_ [@alert "-deprecated"])
-    let function_ = (function_ [@alert "-deprecated"])
-  end
 
   module Te = struct
     include Te
@@ -27,6 +20,10 @@ module Ast_helper = struct
 
   module Type = struct
     include Type
+
+    let mk ~loc ~docs:_ ?text:_ ~params ~cstrs ~kind ~priv ?manifest name =
+      mk ~loc ~params ~cstrs ~kind ~priv ?manifest name
+    ;;
 
     let constructor ~loc ~vars ~info:_ ~args ?res name =
       constructor ~loc ~vars ~args ?res name
