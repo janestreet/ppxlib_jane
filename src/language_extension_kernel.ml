@@ -20,6 +20,7 @@ type _ t =
   | Module_strengthening : unit t
   | Layouts : maturity t
   | SIMD : unit t
+  | Labeled_tuples : unit t
 
 type 'a language_extension_kernel = 'a t
 
@@ -36,6 +37,7 @@ module Exist = struct
     ; Pack Module_strengthening
     ; Pack Layouts
     ; Pack SIMD
+    ; Pack Labeled_tuples
     ]
   ;;
 end
@@ -55,6 +57,7 @@ let to_string : type a. a t -> string = function
   | Module_strengthening -> "module_strengthening"
   | Layouts -> "layouts"
   | SIMD -> "simd"
+  | Labeled_tuples -> "labeled_tuples"
 ;;
 
 (* converts full extension names, like "layouts_alpha" to a pair of
@@ -74,6 +77,7 @@ let pair_of_string extn_name : Exist_pair.t option =
   | "layouts_alpha" -> Some (Pair (Layouts, Alpha))
   | "layouts_beta" -> Some (Pair (Layouts, Beta))
   | "simd" -> Some (Pair (SIMD, ()))
+  | "labeled_tuples" -> Some (Pair (Labeled_tuples, ()))
   | _ -> None
 ;;
 
@@ -97,7 +101,8 @@ let is_erasable : type a. a t -> bool = function
   | Polymorphic_parameters
   | Immutable_arrays
   | Module_strengthening
-  | SIMD -> false
+  | SIMD
+  | Labeled_tuples -> false
 ;;
 
 (* See the mli. *)

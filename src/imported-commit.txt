@@ -1,1 +1,1 @@
-https://github.com/ocaml-flambda/flambda-backend.git 84101aa71dec7faa4c424249b444214a2fb3d840
+https://github.com/ocaml-flambda/flambda-backend.git f10979a08d2ffed881df511a04718c6e2cee7171
