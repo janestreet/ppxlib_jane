@@ -430,6 +430,14 @@ module Mode_annotation = struct
     | Unique
     | Once
 
+  let equal t1 t2 =
+    match t1, t2 with
+    | Local, Local -> true
+    | Unique, Unique -> true
+    | Once, Once -> true
+    | (Local | Unique | Once), _ -> false
+  ;;
+
   include Make_payload_protocol_of_stringable (struct
     type nonrec t = t
 
@@ -741,6 +749,8 @@ module N_ary_functions = struct
     | Local
     | Unique
     | Once
+
+  let mode_annotation_equal = Mode_annotation.equal
 
   type type_constraint =
     | Pconstraint of core_type
