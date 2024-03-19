@@ -12,23 +12,23 @@ let core_type ptyp_desc ~loc:ptyp_loc =
 module Default = struct
   include Types
 
-  let add_extension_attribute ~loc attrs name =
-    attrs
-    @ [ { attr_name = { txt = "extension." ^ name; loc }
-        ; attr_payload = PStr []
-        ; attr_loc = loc
-        }
-      ]
+  let mark_type_with_mode_expr modes ty =
+    let attr = Jane_syntax.Mode_expr.attr_of modes in
+    match attr with
+    | None -> ty
+    | Some attr -> { ty with ptyp_attributes = attr :: ty.ptyp_attributes }
   ;;
 
-  let mark_type_with_extension ~loc name ty =
-    { ty with ptyp_attributes = add_extension_attribute ~loc ty.ptyp_attributes name }
+  let mode_expr_of_mode ~loc mode =
+    match mode with
+    | None -> Jane_syntax.Mode_expr.empty
+    | Some Local ->
+      let mode = Jane_syntax.Mode_expr.Const.mk "local" loc in
+      { txt = [ mode ]; loc }
   ;;
 
   let mark_type_with_mode ~loc mode ty =
-    match mode with
-    | None -> ty
-    | Some Local -> mark_type_with_extension ~loc "local" ty
+    mark_type_with_mode_expr (mode_expr_of_mode ~loc mode) ty
   ;;
 
   let ptyp_arrow ~loc { arg_label; arg_mode; arg_type } { result_mode; result_type } =
@@ -66,31 +66,37 @@ module Default = struct
   ;;
 
   let get_mode ty =
-    match
-      List.partition ty.ptyp_attributes ~f:(function
-        | { attr_name = { txt = "extension.local" | "ocaml.local" | "local"; loc = _ }
-          ; attr_payload = PStr []
-          ; attr_loc = _
-          } -> true
-        | _ -> false)
-    with
-    | [], _ -> None, ty
-    | _ :: _, ptyp_attributes -> Some Local, { ty with ptyp_attributes }
+    let modes, ptyp_attributes = Jane_syntax.Mode_expr.of_attrs ty.ptyp_attributes in
+    let mode =
+      match (modes.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list) with
+      | [] -> None
+      | [ { txt = "local"; _ } ] -> Some Local
+      | _ -> raise (Invalid_argument "Unrecognized modes")
+    in
+    mode, { ty with ptyp_attributes }
+  ;;
+
+  let mode_expr_of_modality ~loc cmo ld =
+    match cmo, ld with
+    | None, _ -> Jane_syntax.Mode_expr.empty
+    | Some Global, (None | Some { pld_mutable = Immutable; _ }) ->
+      let mode = Jane_syntax.Mode_expr.Const.mk "global" loc in
+      { txt = [ mode ]; loc }
+    | Some Global, Some { pld_mutable = Mutable; _ } ->
+      raise (Invalid_argument "record fields cannot be marked as both global and mutable")
   ;;
 
   let mark_type_with_modality ~loc cmo ty =
-    match cmo with
-    | None -> ty
-    | Some Global -> mark_type_with_extension ~loc "global" ty
+    mark_type_with_mode_expr (mode_expr_of_modality ~loc cmo None) ty
   ;;
 
-  let mark_label_with_mode ~loc cmo ld =
-    match cmo, ld with
-    | None, _ -> ld
-    | Some Global, { pld_mutable = Immutable; _ } ->
-      { ld with pld_attributes = add_extension_attribute ~loc ld.pld_attributes "global" }
-    | Some Global, { pld_mutable = Mutable; _ } ->
-      raise (Invalid_argument "record fields cannot be marked as both global and mutable")
+  let mark_label_with_mode_expr modes ld =
+    let pld_type = mark_type_with_mode_expr modes ld.pld_type in
+    { ld with pld_type }
+  ;;
+
+  let mark_label_with_modality ~loc cmo ld =
+    mark_label_with_mode_expr (mode_expr_of_modality ~loc cmo (Some ld)) ld
   ;;
 
   let pcstr_tuple ~loc modes_tys =
@@ -102,7 +108,7 @@ module Default = struct
     match modes_lds with
     | [] -> raise (Invalid_argument (for_ ^ ": records must have at least one field"))
     | _ :: _ ->
-      List.map modes_lds ~f:(fun (mode, ld) -> mark_label_with_mode ~loc mode ld)
+      List.map modes_lds ~f:(fun (mode, ld) -> mark_label_with_modality ~loc mode ld)
   ;;
 
   let pcstr_record ~loc modes_lds =
@@ -113,30 +119,28 @@ module Default = struct
     Ptype_record (add_modes_to_label_declarations ~for_:"ptyp_record" ~loc modes_lds)
   ;;
 
+  let get_attributes_modality attrs =
+    let modalities, rest = Jane_syntax.Mode_expr.of_attrs attrs in
+    let modality =
+      let modalities =
+        (modalities.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list)
+      in
+      match modalities with
+      | [] -> None
+      | [ { txt = "global"; _ } ] -> Some Global
+      | _ -> raise (Invalid_argument "Unrecognized modalities")
+    in
+    modality, rest
+  ;;
+
   let get_tuple_field_modality carg =
-    match
-      List.partition carg.ptyp_attributes ~f:(function
-        | { attr_name = { txt = "extension.global" | "ocaml.global" | "global"; loc = _ }
-          ; attr_payload = PStr []
-          ; attr_loc = _
-          } -> true
-        | _ -> false)
-    with
-    | [], _ -> None, carg
-    | _ :: _, ptyp_attributes -> Some Global, { carg with ptyp_attributes }
+    let modality, ptyp_attributes = get_attributes_modality carg.ptyp_attributes in
+    modality, { carg with ptyp_attributes }
   ;;
 
   let get_label_declaration_modality ld =
-    match
-      List.partition ld.pld_attributes ~f:(function
-        | { attr_name = { txt = "extension.global" | "ocaml.global" | "global"; loc = _ }
-          ; attr_payload = PStr []
-          ; attr_loc = _
-          } -> true
-        | _ -> false)
-    with
-    | [], _ -> None, ld
-    | _ :: _, pld_attributes -> Some Global, { ld with pld_attributes }
+    let modality, pld_type = get_tuple_field_modality ld.pld_type in
+    modality, { ld with pld_type }
   ;;
 
   let n_ary_function ~loc ~attrs ~params ~ty_constraint ~body =

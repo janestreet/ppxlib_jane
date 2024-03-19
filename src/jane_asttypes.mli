@@ -31,10 +31,6 @@ open! Shadow_compiler_distribution
 
 *)
 
-type global_flag =
-  | Global
-  | Nothing
-
 (** [const_jkind] is private to limit confusion with type variables, which
     are also strings in the parser.
 *)

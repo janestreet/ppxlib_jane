@@ -18,10 +18,6 @@ open! Shadow_compiler_distribution
 (*                                                                        *)
 (**************************************************************************)
 
-type global_flag =
-  | Global
-  | Nothing
-
 type const_jkind = string
 
 let jkind_of_string x = x
