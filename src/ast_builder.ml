@@ -179,6 +179,17 @@ module Default = struct
       *)
       (match match_n_ary_function body with
        | Some (params, ty_constraint, body, existing_attrs) ->
+         let existing_attrs =
+           List.filter existing_attrs ~f:(fun attr ->
+             (* We drop "merlin.loc" attributes inserted by merlin's parser.
+
+                These attributes are always fine to drop -- they're a best-effort attempt
+                to encode extra location information -- and usually not fine to move.
+                That's because merlin expects certain invariants to hold between
+                the location encoded by the "merlin.loc" and locations of sub-ASTs.
+             *)
+             String.( <> ) attr.attr_name.txt "merlin.loc")
+         in
          n_ary_function
            ~params:(new_params @ params)
            ~ty_constraint
