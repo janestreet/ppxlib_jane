@@ -3,14 +3,18 @@ open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
 open Stdppx
 include Ast_builder_intf
-include Types
+include Shim
 
 let core_type ptyp_desc ~loc:ptyp_loc =
   { ptyp_desc; ptyp_loc; ptyp_attributes = []; ptyp_loc_stack = [] }
 ;;
 
 module Default = struct
-  include Types
+  include Shim
+
+  type function_param = Shim.Pexp_function.function_param
+  type function_constraint = Shim.Pexp_function.function_constraint
+  type function_body = Shim.Pexp_function.function_body
 
   let mark_type_with_mode_expr modes ty =
     let attr = Jane_syntax.Mode_expr.attr_of modes in
@@ -55,8 +59,8 @@ module Default = struct
         args
         ~init:result_mode_and_type
         ~f:(fun { arg_label; arg_mode; arg_type } arrow_type ->
-        let arg_type = mark_type_with_mode ~loc arg_mode arg_type in
-        core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
+          let arg_type = mark_type_with_mode ~loc arg_mode arg_type in
+          core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
   ;;
 
   let tarrow_maybe ~loc args result_type =
@@ -76,111 +80,70 @@ module Default = struct
     mode, { ty with ptyp_attributes }
   ;;
 
-  let mode_expr_of_modality ~loc cmo ld =
-    match cmo, ld with
-    | None, _ -> Jane_syntax.Mode_expr.empty
-    | Some Global, (None | Some { pld_mutable = Immutable; _ }) ->
-      let mode = Jane_syntax.Mode_expr.Const.mk "global" loc in
-      { txt = [ mode ]; loc }
-    | Some Global, Some { pld_mutable = Mutable; _ } ->
-      raise (Invalid_argument "record fields cannot be marked as both global and mutable")
-  ;;
-
-  let mark_type_with_modality ~loc cmo ty =
-    mark_type_with_mode_expr (mode_expr_of_modality ~loc cmo None) ty
-  ;;
-
-  let mark_label_with_mode_expr modes ld =
-    let pld_type = mark_type_with_mode_expr modes ld.pld_type in
-    { ld with pld_type }
-  ;;
-
-  let mark_label_with_modality ~loc cmo ld =
-    mark_label_with_mode_expr (mode_expr_of_modality ~loc cmo (Some ld)) ld
-  ;;
-
-  let pcstr_tuple ~loc modes_tys =
+  let pcstr_tuple ~loc modalities_tys =
     Pcstr_tuple
-      (List.map modes_tys ~f:(fun (mode, ty) -> mark_type_with_modality ~loc mode ty))
+      (List.map modalities_tys ~f:(fun (modality, type_) ->
+         Shim.Pcstr_tuple_arg.create ~loc ~modality ~type_))
   ;;
 
-  let add_modes_to_label_declarations ~for_ ~loc modes_lds =
-    match modes_lds with
-    | [] -> raise (Invalid_argument (for_ ^ ": records must have at least one field"))
-    | _ :: _ ->
-      List.map modes_lds ~f:(fun (mode, ld) -> mark_label_with_modality ~loc mode ld)
+  let pcstr_tuple_no_modalities tys =
+    Pcstr_tuple
+      (List.map tys ~f:(fun type_ ->
+         Shim.Pcstr_tuple_arg.create ~loc:type_.ptyp_loc ~modality:None ~type_))
   ;;
 
-  let pcstr_record ~loc modes_lds =
-    Pcstr_record (add_modes_to_label_declarations ~for_:"pcstr_record" ~loc modes_lds)
-  ;;
+  let get_tuple_field_modality = Shim.Pcstr_tuple_arg.extract_modality
+  let get_label_declaration_modality = Shim.Label_declaration.extract_modality
+  let label_declaration = Shim.Label_declaration.create
+  let get_value_description_modality = Shim.Value_description.extract_modality
+  let value_description = Shim.Value_description.create
+  let pcstr_tuple_arg = Shim.Pcstr_tuple_arg.create
 
-  let ptype_record ~loc modes_lds =
-    Ptype_record (add_modes_to_label_declarations ~for_:"ptyp_record" ~loc modes_lds)
-  ;;
-
-  let get_attributes_modality attrs =
-    let modalities, rest = Jane_syntax.Mode_expr.of_attrs attrs in
-    let modality =
-      let modalities =
-        (modalities.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list)
-      in
-      match modalities with
-      | [] -> None
-      | [ { txt = "global"; _ } ] -> Some Global
-      | _ -> raise (Invalid_argument "Unrecognized modalities")
-    in
-    modality, rest
-  ;;
-
-  let get_tuple_field_modality carg =
-    let modality, ptyp_attributes = get_attributes_modality carg.ptyp_attributes in
-    modality, { carg with ptyp_attributes }
-  ;;
-
-  let get_label_declaration_modality ld =
-    let modality, pld_type = get_tuple_field_modality ld.pld_type in
-    modality, { ld with pld_type }
-  ;;
-
-  let n_ary_function ~loc ~attrs ~params ~ty_constraint ~body =
-    let expr = Jane_syntax.N_ary_functions.expr_of (params, ty_constraint, body) ~loc in
-    match attrs with
-    | [] -> expr
-    | _ :: _ as attrs -> { expr with pexp_attributes = expr.pexp_attributes @ attrs }
-  ;;
-
-  let match_n_ary_function ast =
-    match Jane_syntax.Expression.of_ast ast with
-    | Some (Jexp_n_ary_function (params, ty_constraint, body), attrs) ->
-      Some (params, ty_constraint, body, attrs)
-    | _ -> None
+  let pexp_function ~loc ~attrs ~params ~constraint_ ~body =
+    { pexp_desc = Shim.Pexp_function.to_parsetree ~params ~constraint_ ~body
+    ; pexp_loc = loc
+    ; pexp_attributes = attrs
+    ; pexp_loc_stack = []
+    }
   ;;
 
   let unary_function ~loc ?(attrs = []) cases =
-    n_ary_function
+    pexp_function
       ~attrs
       ~params:[]
-      ~ty_constraint:None
+      ~constraint_:None
       ~body:(Pfunction_cases (cases, loc, []))
       ~loc
   ;;
 
-  let fun_param ~loc arg_label pattern =
+  let fun_param ~loc arg_label pattern : function_param =
     { pparam_desc = Pparam_val (arg_label, None, pattern); pparam_loc = loc }
   ;;
 
-  let add_fun_params ~loc ?(attrs = []) new_params body =
+  let function_constraint type_constraint : function_constraint =
+    { type_constraint = Pconstraint type_constraint
+    ; mode_annotations = { loc = Location.none; txt = [] }
+    }
+  ;;
+
+  let maybe_constrain body return_constraint ~loc =
+    match return_constraint with
+    | None -> body
+    | Some return_constraint ->
+      Ppxlib_ast.Ast_helper.Exp.constraint_ ~loc body return_constraint
+  ;;
+
+  let add_fun_params ~loc ?(attrs = []) ?return_constraint new_params body =
     match new_params with
-    | [] -> body
+    | [] -> maybe_constrain body return_constraint ~loc
     | _ :: _ ->
       (* If the body is already a function, extend its arity rather than creating a new
          function.
       *)
-      (match match_n_ary_function body with
-       | Some (params, ty_constraint, body, existing_attrs) ->
+      (match Shim.Pexp_function.of_parsetree body.pexp_desc ~loc:body.pexp_loc with
+       | Some (params, constraint_, function_body) ->
          let existing_attrs =
-           List.filter existing_attrs ~f:(fun attr ->
+           List.filter body.pexp_attributes ~f:(fun attr ->
              (* We drop "merlin.loc" attributes inserted by merlin's parser.
 
                 These attributes are always fine to drop -- they're a best-effort attempt
@@ -190,61 +153,91 @@ module Default = struct
              *)
              String.( <> ) attr.attr_name.txt "merlin.loc")
          in
-         n_ary_function
-           ~params:(new_params @ params)
-           ~ty_constraint
-           ~body
-           ~loc
-           ~attrs:(existing_attrs @ attrs)
+         let fun_ =
+           pexp_function
+             ~params:(new_params @ params)
+             ~constraint_
+             ~body:function_body
+             ~loc
+             ~attrs:(existing_attrs @ attrs)
+         in
+         maybe_constrain fun_ return_constraint ~loc
        | None ->
-         n_ary_function
+         pexp_function
            ~params:new_params
-           ~ty_constraint:None
+           ~constraint_:(Option.map return_constraint ~f:function_constraint)
            ~body:(Pfunction_body body)
            ~loc
            ~attrs)
   ;;
 
-  let add_fun_param ~loc ?attrs lbl def pat body =
+  let add_fun_param ~loc ?attrs ?return_constraint lbl def pat body =
     add_fun_params
       ?attrs
+      ?return_constraint
       ~loc
       [ { pparam_desc = Pparam_val (lbl, def, pat); pparam_loc = pat.ppat_loc } ]
       body
   ;;
 
   let coalesce_fun_arity ast =
-    match match_n_ary_function ast with
-    | None | Some (_, Some _, _, _) | Some (_, _, Pfunction_cases _, _) -> ast
-    | Some (params1, None, Pfunction_body outer_body, outer_attrs) ->
-      (match match_n_ary_function outer_body with
-       | Some (params2, ty_constraint, inner_body, []) ->
-         n_ary_function
+    match Shim.Pexp_function.of_parsetree ast.pexp_desc ~loc:ast.pexp_loc with
+    | None | Some (_, Some _, _) | Some (_, _, Pfunction_cases _) -> ast
+    | Some (params1, None, Pfunction_body ({ pexp_attributes = []; _ } as outer_body)) ->
+      (match
+         Shim.Pexp_function.of_parsetree outer_body.pexp_desc ~loc:outer_body.pexp_loc
+       with
+       | Some (params2, constraint_, inner_body) ->
+         pexp_function
            ~params:(params1 @ params2)
-           ~ty_constraint
+           ~constraint_
            ~body:inner_body
            ~loc:ast.pexp_loc
-           ~attrs:outer_attrs
-       | Some (_, _, _, _ :: _) | None -> ast)
+           ~attrs:ast.pexp_attributes
+       | None -> ast)
+    | Some _ -> ast
   ;;
 
-  let eabstract ~loc ?(coalesce_fun_arity = true) pats body =
+  let eabstract ~loc ?(coalesce_fun_arity = true) ?return_constraint pats body =
     let params = List.map pats ~f:(fun pat -> fun_param ~loc:pat.ppat_loc Nolabel pat) in
     if coalesce_fun_arity
-    then add_fun_params ~loc params body
+    then add_fun_params ~loc ?return_constraint params body
     else
-      n_ary_function
+      pexp_function
         ~loc
         ~params
-        ~ty_constraint:None
+        ~constraint_:(Option.map return_constraint ~f:function_constraint)
         ~body:(Pfunction_body body)
         ~attrs:[]
   ;;
+
+  module Latest = struct
+    let pexp_function ~loc ?(attrs = []) params constraint_ body =
+      pexp_function ~loc ~attrs ~params ~constraint_ ~body
+    ;;
+  end
+
+  let lexp_constant ~loc c =
+    Jane_syntax.Expression.expr_of ~loc ~attrs:[] (Jexp_layout (Lexp_constant c))
+  ;;
+
+  let lpat_constant ~loc c =
+    Jane_syntax.Pattern.pat_of ~loc ~attrs:[] (Jpat_layout (Lpat_constant c))
+  ;;
+
+  let eint64_u ~loc i = lexp_constant ~loc (Integer (Int64.to_string i, 'L'))
+  let eint32_u ~loc i = lexp_constant ~loc (Integer (Int32.to_string i, 'l'))
+  let enativeint_u ~loc i = lexp_constant ~loc (Integer (Nativeint.to_string i, 'n'))
+  let efloat_u ~loc f = lexp_constant ~loc (Float (Float.to_string f, None))
+  let pint64_u ~loc i = lpat_constant ~loc (Integer (Int64.to_string i, 'L'))
+  let pint32_u ~loc i = lpat_constant ~loc (Integer (Int32.to_string i, 'l'))
+  let pnativeint_u ~loc i = lpat_constant ~loc (Integer (Nativeint.to_string i, 'n'))
+  let pfloat_u ~loc f = lpat_constant ~loc (Float (Float.to_string f, None))
 end
 
 module Make (Loc : sig
-  val loc : Location.t
-end) =
+    val loc : Location.t
+  end) =
 struct
   include Default
 
@@ -253,21 +246,50 @@ struct
   let tarrow args res : core_type = tarrow ~loc args res
   let tarrow_maybe args res : core_type = tarrow_maybe ~loc args res
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
-  let pcstr_record labels : constructor_arguments = pcstr_record ~loc labels
-  let ptype_record labels : type_kind = ptype_record ~loc labels
 
-  let eabstract ?coalesce_fun_arity a b : expression =
-    eabstract ~loc ?coalesce_fun_arity a b
+  let label_declaration ~name ~mutable_ ~modality ~type_ : label_declaration =
+    label_declaration ~loc ~name ~mutable_ ~modality ~type_
+  ;;
+
+  let value_description ~name ~type_ ~modality ~prim : value_description =
+    value_description ~loc ~name ~type_ ~modality ~prim
+  ;;
+
+  let pcstr_tuple_arg ~modality ~type_ : Pcstr_tuple_arg.t =
+    pcstr_tuple_arg ~loc ~modality ~type_
+  ;;
+
+  module Latest = struct
+    let pexp_function ?attrs a b c : expression = Latest.pexp_function ~loc ?attrs a b c
+  end
+
+  let eabstract ?coalesce_fun_arity ?return_constraint a b : expression =
+    eabstract ~loc ?coalesce_fun_arity ?return_constraint a b
   ;;
 
   let fun_param a b : function_param = fun_param ~loc a b
   let unary_function ?attrs a : expression = unary_function ~loc ?attrs a
-  let add_fun_param ?attrs a b c d : expression = add_fun_param ~loc ?attrs a b c d
-  let add_fun_params ?attrs a b : expression = add_fun_params ~loc ?attrs a b
+
+  let add_fun_param ?attrs ?return_constraint a b c d : expression =
+    add_fun_param ~loc ?attrs ?return_constraint a b c d
+  ;;
+
+  let add_fun_params ?attrs ?return_constraint a b : expression =
+    add_fun_params ~loc ?attrs ?return_constraint a b
+  ;;
+
+  let eint64_u c : expression = eint64_u ~loc c
+  let eint32_u c : expression = eint32_u ~loc c
+  let enativeint_u c : expression = enativeint_u ~loc c
+  let efloat_u c : expression = efloat_u ~loc c
+  let pint64_u c : pattern = pint64_u ~loc c
+  let pint32_u c : pattern = pint32_u ~loc c
+  let pnativeint_u c : pattern = pnativeint_u ~loc c
+  let pfloat_u c : pattern = pfloat_u ~loc c
 end
 
 let make loc : (module S_with_implicit_loc) =
   (module Make (struct
-    let loc = loc
-  end))
+      let loc = loc
+    end))
 ;;

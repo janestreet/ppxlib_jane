@@ -18,8 +18,6 @@ FILE_PATHS=(
   "ocaml/parsing/jane_syntax.mli"
   "ocaml/parsing/jane_syntax_parsing.ml"
   "ocaml/parsing/jane_syntax_parsing.mli"
-  "ocaml/parsing/jane_asttypes.ml"
-  "ocaml/parsing/jane_asttypes.mli"
   "ocaml/utils/language_extension_kernel.mli"
   "ocaml/utils/language_extension_kernel.ml"
 )

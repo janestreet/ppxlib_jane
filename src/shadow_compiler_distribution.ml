@@ -5,9 +5,23 @@
    import Jane_syntax from our extended compiler with minimal changes. If we instead used
    [open Ppxlib_ast], we'd have to update more callsites. *)
 
-module Parsetree = Ppxlib_ast.Parsetree
 module Asttypes = Ppxlib_ast.Asttypes
 module Pprintast = Ppxlib_ast.Pprintast
+
+module Parsetree = struct
+  include Ppxlib_ast.Parsetree
+
+  type mode_expression = Shim.mode_expression
+  type mode_const_expression = Shim.mode_const_expression
+  type jkind_const_annotation = Shim.jkind_const_annotation
+
+  type jkind_annotation = Shim.jkind_annotation =
+    | Default
+    | Abbreviation of jkind_const_annotation
+    | Mod of jkind_annotation * mode_expression
+    | With of jkind_annotation * core_type
+    | Kind_of of core_type
+end
 
 module Ast_helper = struct
   include Ppxlib_ast.Ast_helper
@@ -21,8 +35,8 @@ module Ast_helper = struct
   module Type = struct
     include Type
 
-    let mk ~loc ~docs:_ ?text:_ ~params ~cstrs ~kind ~priv ?manifest name =
-      mk ~loc ~params ~cstrs ~kind ~priv ?manifest name
+    let mk ?loc ?docs:_ ?text:_ ?params ?cstrs ?kind ?priv ?manifest name =
+      mk ?loc ?params ?cstrs ?kind ?priv ?manifest name
     ;;
 
     let constructor ~loc ~vars ~info:_ ~args ?res name =

@@ -2,60 +2,16 @@ open Astlib
 open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
 
-module Types = struct
-  (** The modes that can go on function arguments or return types *)
-  type mode = Local (** [local_ ty] *)
-
-  (** Function arguments; a value of this type represents:
-      - [arg_mode arg_type -> ...] when [arg_label] is
-        {{!Asttypes.arg_label.Nolabel}[Nolabel]},
-      - [l:arg_mode arg_type -> ...] when [arg_label] is
-        {{!Asttypes.arg_label.Labelled}[Labelled]}, and
-      - [?l:arg_mode arg_type -> ...] when [arg_label] is
-        {{!Asttypes.arg_label.Optional}[Optional]}. *)
-  type arrow_argument =
-    { arg_label : arg_label
-    ; arg_mode : mode option
-    ; arg_type : core_type
-    }
-
-  (** Function return types; a value of this type represents
-      [... -> result_mode result_type]. *)
-  type arrow_result =
-    { result_mode : mode option
-    ; result_type : core_type
-    }
-
-  (** The modalities that can go on constructor fields *)
-  type modality =
-    | Global (** [C of (..., global_ ty, ...)] or [{ ...; global_ l : ty; ... }]. *)
-
-  (** This type corresponds to [Parsetree.function_param] added in #12236; see the comment
-      below introducing function arity. *)
-  type function_param_desc = Jane_syntax.N_ary_functions.function_param_desc =
-    | Pparam_val of arg_label * expression option * pattern
-        (** In [Pparam_val (lbl, def, pat)]:
-        - [lbl] is the parameter label
-        - [def] is the default argument for an optional parameter
-        - [pat] is the pattern that is matched against the argument.
-          See comment on {!Parsetree.Pexp_fun} for more detail. *)
-    | Pparam_newtype of string loc * Jane_asttypes.jkind_annotation option
-        (** [Pparam_newtype tv] represents a locally abstract type argument [(type tv)] *)
-
-  type function_param = Jane_syntax.N_ary_functions.function_param =
-    { pparam_desc : function_param_desc
-    ; pparam_loc : Location.t
-    }
-end
-
 module type S = sig
   type 'a with_loc
 
   (** We expose the types within the specific [Ast_builder.S] modules because those
       modules are designed to be opened. *)
   include module type of struct
-    include Types
+    include Shim
   end
+
+  (** {2 Modes} *)
 
   (** Construct an arrow type with the provided argument and result, including the types,
       modes, and argument label (if any). *)
@@ -79,24 +35,15 @@ module type S = sig
       constructor, that attaches the provided modalities to each field. *)
   val pcstr_tuple : ((modality option * core_type) list -> constructor_arguments) with_loc
 
-  (** Construct a [Pcstr_record], a representation for the contents of a variant
-      constructor with an inlined record, that attaches the provided modalities to each
-      label.
-
-      @raise [Invalid_argument] if the input list is empty. *)
-  val pcstr_record
-    : ((modality option * label_declaration) list -> constructor_arguments) with_loc
-
-  (** Construct a [Ptype_record], a representation of a record type, that attaches the
-      provided modalities to each label.
-
-      @raise [Invalid_argument] if the input list is empty. *)
-  val ptype_record : ((modality option * label_declaration) list -> type_kind) with_loc
+  (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
+      constructor, that attaches no modalities to any field. Equivalent to [pcstr_tuple]
+      with every [modality option] being [None] *)
+  val pcstr_tuple_no_modalities : core_type list -> constructor_arguments
 
   (** Splits a possibly-modality-annotated field of a tupled variant constructor into a
       pair of its modality and the unannotated field.  If the resulting mode is [None],
       then the field is returned unchanged.  *)
-  val get_tuple_field_modality : core_type -> modality option * core_type
+  val get_tuple_field_modality : Pcstr_tuple_arg.t -> modality option * core_type
 
   (** Splits a possibly-modality-annotated label declaration into a pair of its modality
       and the unannotated label declaration.  If the resulting modality is [None], then
@@ -104,6 +51,31 @@ module type S = sig
   val get_label_declaration_modality
     :  label_declaration
     -> modality option * label_declaration
+
+  val label_declaration
+    : (name:string Location.loc
+       -> mutable_:mutable_flag
+       -> modality:modality option
+       -> type_:core_type
+       -> label_declaration)
+        with_loc
+
+  val get_value_description_modality
+    :  value_description
+    -> modality option * value_description
+
+  val value_description
+    : (name:string Location.loc
+       -> type_:core_type
+       -> modality:modality option
+       -> prim:string list
+       -> value_description)
+        with_loc
+
+  val pcstr_tuple_arg
+    : (modality:modality option -> type_:core_type -> Pcstr_tuple_arg.t) with_loc
+
+  (** {2 N-ary functions} *)
 
   (** Many comments below make reference to the Jane Street compiler's treatment of
       function arity. These comments refer to a parsetree change made to upstream OCaml in
@@ -142,6 +114,22 @@ module type S = sig
       case; the nested [function]s are treated as unary. (See the last example.)
   *)
 
+  type function_param = Shim.Pexp_function.function_param
+  type function_constraint = Shim.Pexp_function.function_constraint
+  type function_body = Shim.Pexp_function.function_body
+
+  module Latest : sig
+    (** Avoid shadowing [pexp_function] in Ppxlib's AST builder. *)
+
+    val pexp_function
+      : (?attrs:attributes
+         -> function_param list
+         -> function_constraint option
+         -> function_body
+         -> expression)
+          with_loc
+  end
+
   (** Create a function with unlabeled parameters and an expression body. Like
       {!Ppxlib.Ast_builder.eapply}, but for constructing functions.
 
@@ -160,7 +148,12 @@ module type S = sig
 
   *)
   val eabstract
-    : (?coalesce_fun_arity:bool -> pattern list -> expression -> expression) with_loc
+    : (?coalesce_fun_arity:bool
+       -> ?return_constraint:core_type
+       -> pattern list
+       -> expression
+       -> expression)
+        with_loc
 
   (** [unary_function cases] is [function <cases>]. When used with the Jane Street
       compiler, the function's runtime arity is 1, so the fast path for function
@@ -197,19 +190,25 @@ module type S = sig
   *)
   val add_fun_param
     : (?attrs:attributes
+       -> ?return_constraint:core_type
        -> arg_label
        -> expression option
        -> pattern
        -> expression
        -> expression)
-      with_loc
+        with_loc
 
   (** [add_params params e] is [List.fold_right params ~init:e ~f:add_param].
       Note the [fold_right]: if [e] is [fun <params'> -> <body>], then
       [add_params params e] is [fun <params @ params'> -> <body>].
   *)
   val add_fun_params
-    : (?attrs:attributes -> function_param list -> expression -> expression) with_loc
+    : (?attrs:attributes
+       -> ?return_constraint:core_type
+       -> function_param list
+       -> expression
+       -> expression)
+        with_loc
 
   (** This operation is a no-op, except as interpreted by the Jane Street compiler.
       If [e] is a function with arity [n] with an expression body that itself is
@@ -222,6 +221,36 @@ module type S = sig
       [coalesce_fun_arity [%expr fun x y -> [%e possibly_function]]]
   *)
   val coalesce_fun_arity : expression -> expression
+
+  (** {2 Unboxed type literals} *)
+
+  (** {3 Expression literals} *)
+
+  (** e.g. [#42L] *)
+  val eint64_u : (int64 -> expression) with_loc
+
+  (** e.g. [#42l] *)
+  val eint32_u : (int32 -> expression) with_loc
+
+  (** e.g. [#42n] *)
+  val enativeint_u : (nativeint -> expression) with_loc
+
+  (** e.g. [#42.] *)
+  val efloat_u : (float -> expression) with_loc
+
+  (** {3 Pattern literals} *)
+
+  (** e.g. [#42L] *)
+  val pint64_u : (int64 -> pattern) with_loc
+
+  (** e.g. [#42l] *)
+  val pint32_u : (int32 -> pattern) with_loc
+
+  (** e.g. [#42n] *)
+  val pnativeint_u : (nativeint -> pattern) with_loc
+
+  (** e.g. [#42.] *)
+  val pfloat_u : (float -> pattern) with_loc
 end
 
 module type S_with_implicit_loc = S with type 'a with_loc := 'a
@@ -237,8 +266,8 @@ module type Ast_builder = sig
   module Default : S_with_explicit_loc
 
   module Make (Loc : sig
-    val loc : Location.t
-  end) : S_with_implicit_loc
+      val loc : Location.t
+    end) : S_with_implicit_loc
 
   val make : Location.t -> (module S_with_implicit_loc)
 end
