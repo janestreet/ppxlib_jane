@@ -23,25 +23,23 @@ module Default = struct
     | Some attr -> { ty with ptyp_attributes = attr :: ty.ptyp_attributes }
   ;;
 
-  let mode_expr_of_mode ~loc mode =
-    match mode with
-    | None -> Jane_syntax.Mode_expr.empty
-    | Some Local ->
-      let mode = Jane_syntax.Mode_expr.Const.mk "local" loc in
-      { txt = [ mode ]; loc }
+  let mode_expr_of_modes ~loc modes =
+    List.fold_right modes ~init:Jane_syntax.Mode_expr.empty ~f:(fun (Mode name) acc ->
+      let mode = Jane_syntax.Mode_expr.Const.mk name loc in
+      Jane_syntax.Mode_expr.concat { txt = [ mode ]; loc } acc)
   ;;
 
-  let mark_type_with_mode ~loc mode ty =
-    mark_type_with_mode_expr (mode_expr_of_mode ~loc mode) ty
+  let mark_type_with_modes ~loc mode ty =
+    mark_type_with_mode_expr (mode_expr_of_modes ~loc mode) ty
   ;;
 
-  let ptyp_arrow ~loc { arg_label; arg_mode; arg_type } { result_mode; result_type } =
+  let ptyp_arrow ~loc { arg_label; arg_modes; arg_type } { result_modes; result_type } =
     core_type
       ~loc
       (Ptyp_arrow
          ( arg_label
-         , mark_type_with_mode ~loc arg_mode arg_type
-         , mark_type_with_mode ~loc result_mode result_type ))
+         , mark_type_with_modes ~loc arg_modes arg_type
+         , mark_type_with_modes ~loc result_modes result_type ))
   ;;
 
   let tarrow ~loc args result =
@@ -52,50 +50,49 @@ module Default = struct
            "tarrow: Can't construct a 0-ary arrow, argument list must be nonempty")
     | _ :: _ ->
       let result_mode_and_type =
-        let { result_mode; result_type } = result in
-        mark_type_with_mode ~loc result_mode result_type
+        let { result_modes; result_type } = result in
+        mark_type_with_modes ~loc result_modes result_type
       in
       List.fold_right
         args
         ~init:result_mode_and_type
-        ~f:(fun { arg_label; arg_mode; arg_type } arrow_type ->
-          let arg_type = mark_type_with_mode ~loc arg_mode arg_type in
+        ~f:(fun { arg_label; arg_modes; arg_type } arrow_type ->
+          let arg_type = mark_type_with_modes ~loc arg_modes arg_type in
           core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
   ;;
 
   let tarrow_maybe ~loc args result_type =
     match args with
     | [] -> result_type
-    | _ :: _ -> tarrow ~loc args { result_mode = None; result_type }
+    | _ :: _ -> tarrow ~loc args { result_modes = []; result_type }
   ;;
 
-  let get_mode ty =
+  let get_modes ty =
     let modes, ptyp_attributes = Jane_syntax.Mode_expr.of_attrs ty.ptyp_attributes in
-    let mode =
-      match (modes.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list) with
-      | [] -> None
-      | [ { txt = "local"; _ } ] -> Some Local
-      | _ -> raise (Invalid_argument "Unrecognized modes")
+    let modes =
+      List.map
+        (modes.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list)
+        ~f:(fun { txt = name; _ } -> Mode name)
     in
-    mode, { ty with ptyp_attributes }
+    modes, { ty with ptyp_attributes }
   ;;
 
   let pcstr_tuple ~loc modalities_tys =
     Pcstr_tuple
-      (List.map modalities_tys ~f:(fun (modality, type_) ->
-         Shim.Pcstr_tuple_arg.create ~loc ~modality ~type_))
+      (List.map modalities_tys ~f:(fun (modalities, type_) ->
+         Shim.Pcstr_tuple_arg.create ~loc ~modalities ~type_))
   ;;
 
   let pcstr_tuple_no_modalities tys =
     Pcstr_tuple
       (List.map tys ~f:(fun type_ ->
-         Shim.Pcstr_tuple_arg.create ~loc:type_.ptyp_loc ~modality:None ~type_))
+         Shim.Pcstr_tuple_arg.create ~loc:type_.ptyp_loc ~modalities:[] ~type_))
   ;;
 
-  let get_tuple_field_modality = Shim.Pcstr_tuple_arg.extract_modality
-  let get_label_declaration_modality = Shim.Label_declaration.extract_modality
+  let get_tuple_field_modalities = Shim.Pcstr_tuple_arg.extract_modalities
+  let get_label_declaration_modalities = Shim.Label_declaration.extract_modalities
   let label_declaration = Shim.Label_declaration.create
-  let get_value_description_modality = Shim.Value_description.extract_modality
+  let get_value_description_modalities = Shim.Value_description.extract_modalities
   let value_description = Shim.Value_description.create
   let pcstr_tuple_arg = Shim.Pcstr_tuple_arg.create
 
@@ -247,16 +244,16 @@ struct
   let tarrow_maybe args res : core_type = tarrow_maybe ~loc args res
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
 
-  let label_declaration ~name ~mutable_ ~modality ~type_ : label_declaration =
-    label_declaration ~loc ~name ~mutable_ ~modality ~type_
+  let label_declaration ~name ~mutable_ ~modalities ~type_ : label_declaration =
+    label_declaration ~loc ~name ~mutable_ ~modalities ~type_
   ;;
 
-  let value_description ~name ~type_ ~modality ~prim : value_description =
-    value_description ~loc ~name ~type_ ~modality ~prim
+  let value_description ~name ~type_ ~modalities ~prim : value_description =
+    value_description ~loc ~name ~type_ ~modalities ~prim
   ;;
 
-  let pcstr_tuple_arg ~modality ~type_ : Pcstr_tuple_arg.t =
-    pcstr_tuple_arg ~loc ~modality ~type_
+  let pcstr_tuple_arg ~modalities ~type_ : Pcstr_tuple_arg.t =
+    pcstr_tuple_arg ~loc ~modalities ~type_
   ;;
 
   module Latest = struct

@@ -2,37 +2,36 @@ open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
 module Ast_helper = Ppxlib_ast.Ast_helper
 
-type mode = Local (** [local_ ty] *)
+type mode = Mode of string [@@unboxed]
 
 type arrow_argument =
   { arg_label : arg_label
-  ; arg_mode : mode option
+  ; arg_modes : mode list
   ; arg_type : core_type
   }
 
 type arrow_result =
-  { result_mode : mode option
+  { result_modes : mode list
   ; result_type : core_type
   }
 
-type modality =
-  | Global (** [C of (..., global_ ty, ...)] or [{ ...; global_ l : ty; ... }]. *)
+type modality = Modality of string [@@unboxed]
 
 module Pcstr_tuple_arg = struct
   type t = core_type
 
-  let extract_modality t = None, t
+  let extract_modalities t = [], t
   let to_core_type t = t
   let of_core_type core_type = core_type
   let map_core_type t ~f = f t
   let map_core_type_extra t ~f = f t
-  let create ~loc:_ ~modality:_ ~type_ = type_
+  let create ~loc:_ ~modalities:_ ~type_ = type_
 end
 
 module Label_declaration = struct
-  let extract_modality ld = None, ld
+  let extract_modalities ld = [], ld
 
-  let create ~loc ~name ~mutable_ ~modality:_ ~type_ =
+  let create ~loc ~name ~mutable_ ~modalities:_ ~type_ =
     { pld_loc = loc
     ; pld_name = name
     ; pld_type = type_
@@ -43,9 +42,9 @@ module Label_declaration = struct
 end
 
 module Value_description = struct
-  let extract_modality vd = None, vd
+  let extract_modalities vd = [], vd
 
-  let create ~loc ~name ~type_ ~modality:_ ~prim =
+  let create ~loc ~name ~type_ ~modalities:_ ~prim =
     { pval_loc = loc
     ; pval_name = name
     ; pval_type = type_

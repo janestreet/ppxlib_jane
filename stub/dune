@@ -1,0 +1,5 @@
+(library
+ (name ppxlib_jane_stub)
+ (public_name ppxlib_jane.stub)
+ (libraries ppxlib.ppxlib_jane)
+ (preprocess no_preprocessing))

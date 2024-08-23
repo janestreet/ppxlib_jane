@@ -4,12 +4,12 @@ open Ppxlib_ast.Parsetree
 
 module type S = sig
   type 'a with_loc
+  type arrow_argument := Shim.arrow_argument
+  type arrow_result := Shim.arrow_result
+  type modality := Shim.modality
+  type mode := Shim.mode
 
-  (** We expose the types within the specific [Ast_builder.S] modules because those
-      modules are designed to be opened. *)
-  include module type of struct
-    include Shim
-  end
+  module Pcstr_tuple_arg := Shim.Pcstr_tuple_arg
 
   (** {2 Modes} *)
 
@@ -29,51 +29,51 @@ module type S = sig
   (** Splits a possibly-mode-annotated function argument or result into a pair of its mode
       and the unannotated type.  If the resulting mode is [None], then the type is
       returned unchanged.  *)
-  val get_mode : core_type -> mode option * core_type
+  val get_modes : core_type -> mode list * core_type
 
   (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
       constructor, that attaches the provided modalities to each field. *)
-  val pcstr_tuple : ((modality option * core_type) list -> constructor_arguments) with_loc
+  val pcstr_tuple : ((modality list * core_type) list -> constructor_arguments) with_loc
 
   (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
       constructor, that attaches no modalities to any field. Equivalent to [pcstr_tuple]
-      with every [modality option] being [None] *)
+      with every [modality list] being [None] *)
   val pcstr_tuple_no_modalities : core_type list -> constructor_arguments
 
   (** Splits a possibly-modality-annotated field of a tupled variant constructor into a
       pair of its modality and the unannotated field.  If the resulting mode is [None],
       then the field is returned unchanged.  *)
-  val get_tuple_field_modality : Pcstr_tuple_arg.t -> modality option * core_type
+  val get_tuple_field_modalities : Pcstr_tuple_arg.t -> modality list * core_type
 
   (** Splits a possibly-modality-annotated label declaration into a pair of its modality
       and the unannotated label declaration.  If the resulting modality is [None], then
       the label declaration is returned unchanged.  *)
-  val get_label_declaration_modality
+  val get_label_declaration_modalities
     :  label_declaration
-    -> modality option * label_declaration
+    -> modality list * label_declaration
 
   val label_declaration
     : (name:string Location.loc
        -> mutable_:mutable_flag
-       -> modality:modality option
+       -> modalities:modality list
        -> type_:core_type
        -> label_declaration)
         with_loc
 
-  val get_value_description_modality
+  val get_value_description_modalities
     :  value_description
-    -> modality option * value_description
+    -> modality list * value_description
 
   val value_description
     : (name:string Location.loc
        -> type_:core_type
-       -> modality:modality option
+       -> modalities:modality list
        -> prim:string list
        -> value_description)
         with_loc
 
   val pcstr_tuple_arg
-    : (modality:modality option -> type_:core_type -> Pcstr_tuple_arg.t) with_loc
+    : (modalities:modality list -> type_:core_type -> Pcstr_tuple_arg.t) with_loc
 
   (** {2 N-ary functions} *)
 

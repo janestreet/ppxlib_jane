@@ -6,7 +6,7 @@ open Ppxlib_ast.Parsetree
     and the upstream compiler, allowing ppxes to easily work with both versions *)
 
 (** The modes that can go on function arguments or return types *)
-type mode = Local (** [local_ ty] *)
+type mode = Mode of string [@@unboxed]
 
 (** Function arguments; a value of this type represents:
     - [arg_mode arg_type -> ...] when [arg_label] is
@@ -17,20 +17,19 @@ type mode = Local (** [local_ ty] *)
       {{!Asttypes.arg_label.Optional}[Optional]}. *)
 type arrow_argument =
   { arg_label : arg_label
-  ; arg_mode : mode option
+  ; arg_modes : mode list
   ; arg_type : core_type
   }
 
 (** Function return types; a value of this type represents
     [... -> result_mode result_type]. *)
 type arrow_result =
-  { result_mode : mode option
+  { result_modes : mode list
   ; result_type : core_type
   }
 
 (** The modalities that can go on constructor fields *)
-type modality =
-  | Global (** [C of (..., global_ ty, ...)] or [{ ...; global_ l : ty; ... }]. *)
+type modality = Modality of string [@@unboxed]
 
 (** A list of this type is stored in the [Pcstr_tuple] constructor of
     [constructor_arguments]. With JS extensions, fields in constructors can contain
@@ -38,38 +37,38 @@ type modality =
 module Pcstr_tuple_arg : sig
   type t = core_type
 
-  val extract_modality : t -> modality option * core_type
+  val extract_modalities : t -> modality list * core_type
   val to_core_type : t -> core_type
   val of_core_type : core_type -> t
   val map_core_type : t -> f:(core_type -> core_type) -> t
   val map_core_type_extra : t -> f:(core_type -> core_type * 'a) -> t * 'a
 
   (** [loc] is ignored if there is no modality. *)
-  val create : loc:Location.t -> modality:modality option -> type_:core_type -> t
+  val create : loc:Location.t -> modalities:modality list -> type_:core_type -> t
 end
 
 (** This is an interface around the [Parsetree.label_declaration] type, describing one
     label in a record declaration. *)
 module Label_declaration : sig
-  val extract_modality : label_declaration -> modality option * label_declaration
+  val extract_modalities : label_declaration -> modality list * label_declaration
 
   val create
     :  loc:Location.t
     -> name:string Location.loc
     -> mutable_:mutable_flag
-    -> modality:modality option
+    -> modalities:modality list
     -> type_:core_type
     -> label_declaration
 end
 
 module Value_description : sig
-  val extract_modality : value_description -> modality option * value_description
+  val extract_modalities : value_description -> modality list * value_description
 
   val create
     :  loc:Location.t
     -> name:string Location.loc
     -> type_:core_type
-    -> modality:modality option
+    -> modalities:modality list
     -> prim:string list
     -> value_description
 end
