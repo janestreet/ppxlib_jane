@@ -1,7 +1,7 @@
 (library
  (name ppxlib_jane)
  (public_name ppxlib_jane)
- (libraries ppxlib_jane_stub)
+ (libraries ppxlib.ppxlib_jane_stub)
  (preprocess no_preprocessing))
 
 (data_only_dirs src)
