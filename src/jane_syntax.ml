@@ -1099,9 +1099,9 @@ module Layouts = struct
         Location.errorf
           ~loc
           "Layout extension does not understand these attribute names:@;[%a]"
-          (Format.pp_print_list
-             ~pp_sep:(fun ppf () -> Format.fprintf ppf ";@ ")
-             Format.pp_print_text)
+          (Format_doc.pp_print_list
+             ~pp_sep:(fun ppf () -> Format_doc.fprintf ppf ";@ ")
+             Format_doc.pp_print_text)
           names
       | No_integer_suffix ->
         Location.errorf

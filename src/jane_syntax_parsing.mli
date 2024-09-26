@@ -149,7 +149,7 @@ module Embedded_name : sig
 
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)
-  val pp_quoted_name : Format.formatter -> t -> unit
+  val pp_quoted_name : Format_doc.formatter -> t -> unit
 end
 
 (** Each syntactic category that contains novel syntactic features has a
