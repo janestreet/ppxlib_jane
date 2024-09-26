@@ -1,38 +1,59 @@
+open Astlib
 open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
 module Ast_helper = Ppxlib_ast.Ast_helper
 
-type mode = Local (** [local_ ty] *)
+module Modality = struct
+  type nonrec t = Modality of string [@@unboxed]
+end
+
+module Modalities = struct
+  type t = Modality.t loc list
+end
+
+module Mode = struct
+  type t = Mode of string [@@unboxed]
+end
+
+module Modes = struct
+  type t = Mode.t loc list
+
+  let local = [ { txt = Mode.Mode "local"; loc = Location.none } ]
+  let none = []
+end
+
+module Include_kind = struct
+  type t =
+    | Structure
+    | Functor
+end
 
 type arrow_argument =
   { arg_label : arg_label
-  ; arg_mode : mode option
+  ; arg_modes : Modes.t
   ; arg_type : core_type
   }
 
 type arrow_result =
-  { result_mode : mode option
+  { result_modes : Modes.t
   ; result_type : core_type
   }
-
-type modality =
-  | Global (** [C of (..., global_ ty, ...)] or [{ ...; global_ l : ty; ... }]. *)
 
 module Pcstr_tuple_arg = struct
   type t = core_type
 
-  let extract_modality t = None, t
+  let extract_modalities t = [], t
   let to_core_type t = t
   let of_core_type core_type = core_type
   let map_core_type t ~f = f t
   let map_core_type_extra t ~f = f t
-  let create ~loc:_ ~modality:_ ~type_ = type_
+  let create ~loc:_ ~modalities:_ ~type_ = type_
 end
 
 module Label_declaration = struct
-  let extract_modality ld = None, ld
+  let extract_modalities ld = [], ld
 
-  let create ~loc ~name ~mutable_ ~modality:_ ~type_ =
+  let create ~loc ~name ~mutable_ ~modalities:_ ~type_ =
     { pld_loc = loc
     ; pld_name = name
     ; pld_type = type_
@@ -43,9 +64,9 @@ module Label_declaration = struct
 end
 
 module Value_description = struct
-  let extract_modality vd = None, vd
+  let extract_modalities vd = [], vd
 
-  let create ~loc ~name ~type_ ~modality:_ ~prim =
+  let create ~loc ~name ~type_ ~modalities:_ ~prim =
     { pval_loc = loc
     ; pval_name = name
     ; pval_type = type_
@@ -55,16 +76,23 @@ module Value_description = struct
   ;;
 end
 
-type mode_const_expression = string Location.loc
-type mode_expression = mode_const_expression list Location.loc
+module Value_binding = struct
+  let extract_modes vb = [], vb
+
+  let create ~loc ~pat ~expr ~modes:_ =
+    { pvb_pat = pat; pvb_expr = expr; pvb_attributes = []; pvb_loc = loc }
+  ;;
+end
+
 type jkind_const_annotation = string Location.loc
 
 type jkind_annotation =
   | Default
   | Abbreviation of jkind_const_annotation
-  | Mod of jkind_annotation * mode_expression
+  | Mod of jkind_annotation * Modes.t
   | With of jkind_annotation * core_type
   | Kind_of of core_type
+  | Product of jkind_annotation list
 
 module Pexp_function = struct
   type function_param_desc =
@@ -81,7 +109,7 @@ module Pexp_function = struct
     | Pcoerce of core_type option * core_type
 
   type function_constraint =
-    { mode_annotations : mode_expression
+    { mode_annotations : Modes.t
     ; type_constraint : type_constraint
     }
 
@@ -136,8 +164,7 @@ module Pexp_function = struct
         let constraint_ : function_constraint option =
           match constraint_ with
           | None -> None
-          | Some type_constraint ->
-            Some { mode_annotations = { txt = []; loc = Location.none }; type_constraint }
+          | Some type_constraint -> Some { mode_annotations = []; type_constraint }
         in
         Some (List.rev rev_params, constraint_, body)
     in
@@ -173,6 +200,188 @@ module Pexp_function = struct
   ;;
 end
 
+let ptyp_any =
+  { ptyp_desc = Ptyp_any
+  ; ptyp_loc = Location.none
+  ; ptyp_loc_stack = []
+  ; ptyp_attributes = []
+  }
+;;
+
+module Core_type_desc = struct
+  type t =
+    | Ptyp_any
+    | Ptyp_var of string
+    | Ptyp_arrow of arg_label * core_type * core_type * Modes.t * Modes.t
+    | Ptyp_tuple of core_type list
+    | Ptyp_unboxed_tuple of (string option * core_type) list
+    | Ptyp_constr of Longident.t loc * core_type list
+    | Ptyp_object of object_field list * closed_flag
+    | Ptyp_class of Longident.t loc * core_type list
+    | Ptyp_alias of core_type * string
+    | Ptyp_variant of row_field list * closed_flag * label list option
+    | Ptyp_poly of string loc list * core_type
+    | Ptyp_package of package_type
+    | Ptyp_extension of extension
+
+  let of_parsetree : core_type_desc -> t = function
+    (* changed constructors *)
+    | Ptyp_arrow (a, b, c) -> Ptyp_arrow (a, b, c, [], [])
+    (* unchanged constructors *)
+    | Ptyp_any -> Ptyp_any
+    | Ptyp_var s -> Ptyp_var s
+    | Ptyp_tuple a -> Ptyp_tuple a
+    | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
+    | Ptyp_object (a, b) -> Ptyp_object (a, b)
+    | Ptyp_class (a, b) -> Ptyp_class (a, b)
+    | Ptyp_alias (a, b) -> Ptyp_alias (a, b)
+    | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
+    | Ptyp_poly (a, b) -> Ptyp_poly (a, b)
+    | Ptyp_package a -> Ptyp_package a
+    | Ptyp_extension a -> Ptyp_extension a
+  ;;
+
+  let to_parsetree : t -> core_type_desc = function
+    (* changed constructors *)
+    | Ptyp_arrow (a, b, c, _, _) -> Ptyp_arrow (a, b, c)
+    (* new constructors *)
+    | Ptyp_unboxed_tuple typs ->
+      let typs =
+        List.map
+          (fun (lbl, typ) ->
+            if Option.is_some lbl
+            then
+              failwith
+                "[Ptyp_unboxed_tuple], when labels are present, is not a legal \
+                 [core_type_desc] in your parsetree";
+            typ)
+          typs
+      in
+      Ptyp_tuple typs
+    (* unchanged constructors *)
+    | Ptyp_any -> Ptyp_any
+    | Ptyp_var s -> Ptyp_var s
+    | Ptyp_tuple a -> Ptyp_tuple a
+    | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
+    | Ptyp_object (a, b) -> Ptyp_object (a, b)
+    | Ptyp_class (a, b) -> Ptyp_class (a, b)
+    | Ptyp_alias (a, b) -> Ptyp_alias (a, b)
+    | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
+    | Ptyp_poly (a, b) -> Ptyp_poly (a, b)
+    | Ptyp_package a -> Ptyp_package a
+    | Ptyp_extension a -> Ptyp_extension a
+  ;;
+end
+
+module Core_type = struct
+  type t =
+    { ptyp_desc : Core_type_desc.t
+    ; ptyp_loc : Location.t
+    ; ptyp_loc_stack : Location.t list
+    ; ptyp_attributes : attributes
+    }
+
+  let of_parsetree
+    { Ppxlib_ast.Parsetree.ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
+    =
+    let ptyp_desc = Core_type_desc.of_parsetree ptyp_desc in
+    { ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
+  ;;
+
+  let to_parsetree { ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes } =
+    let ptyp_desc = Core_type_desc.to_parsetree ptyp_desc in
+    { Ppxlib_ast.Parsetree.ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
+  ;;
+end
+
+module Pattern_desc = struct
+  type t =
+    | Ppat_any
+    | Ppat_var of string loc
+    | Ppat_alias of pattern * string loc
+    | Ppat_constant of constant
+    | Ppat_interval of constant * constant
+    | Ppat_tuple of pattern list
+    | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
+    | Ppat_construct of Longident.t loc * (string loc list * pattern) option
+    | Ppat_variant of label * pattern option
+    | Ppat_record of (Longident.t loc * pattern) list * closed_flag
+    | Ppat_array of pattern list
+    | Ppat_or of pattern * pattern
+    | Ppat_constraint of pattern * core_type option * Modes.t
+    | Ppat_type of Longident.t loc
+    | Ppat_lazy of pattern
+    | Ppat_unpack of string option loc
+    | Ppat_exception of pattern
+    | Ppat_extension of extension
+    | Ppat_open of Longident.t loc * pattern
+
+  let of_parsetree : pattern_desc -> t = function
+    (* changed constructors *)
+    | Ppat_constraint (a, b) -> Ppat_constraint (a, Some b, [])
+    (* unchanged constructors *)
+    | Ppat_any -> Ppat_any
+    | Ppat_var a -> Ppat_var a
+    | Ppat_alias (a, b) -> Ppat_alias (a, b)
+    | Ppat_constant a -> Ppat_constant a
+    | Ppat_interval (a, b) -> Ppat_interval (a, b)
+    | Ppat_tuple a -> Ppat_tuple a
+    | Ppat_construct (a, b) -> Ppat_construct (a, b)
+    | Ppat_variant (a, b) -> Ppat_variant (a, b)
+    | Ppat_record (a, b) -> Ppat_record (a, b)
+    | Ppat_array a -> Ppat_array a
+    | Ppat_or (a, b) -> Ppat_or (a, b)
+    | Ppat_type a -> Ppat_type a
+    | Ppat_lazy a -> Ppat_lazy a
+    | Ppat_unpack a -> Ppat_unpack a
+    | Ppat_exception a -> Ppat_exception a
+    | Ppat_extension a -> Ppat_extension a
+    | Ppat_open (a, b) -> Ppat_open (a, b)
+  ;;
+
+  let to_parsetree : t -> pattern_desc = function
+    (* changed constructors *)
+    | Ppat_constraint (a, Some b, _) -> Ppat_constraint (a, b)
+    | Ppat_constraint (a, None, _) -> Ppat_constraint (a, ptyp_any)
+    (* new constructors *)
+    | Ppat_unboxed_tuple (_, Open) ->
+      failwith
+        "[Ppat_unboxed_tuple] with an \"open\" pattern is not a legal [pattern_desc] in \
+         your parsetree"
+    | Ppat_unboxed_tuple (pats, Closed) ->
+      let pats =
+        List.map
+          (fun (lbl, pat) ->
+            if Option.is_some lbl
+            then
+              failwith
+                "[Ppat_unboxed_tuple], when labels are present, is not a legal \
+                 [pattern_desc] in your parsetree";
+            pat)
+          pats
+      in
+      Ppat_tuple pats
+    (* unchanged constructors *)
+    | Ppat_any -> Ppat_any
+    | Ppat_var a -> Ppat_var a
+    | Ppat_alias (a, b) -> Ppat_alias (a, b)
+    | Ppat_constant a -> Ppat_constant a
+    | Ppat_interval (a, b) -> Ppat_interval (a, b)
+    | Ppat_tuple a -> Ppat_tuple a
+    | Ppat_construct (a, b) -> Ppat_construct (a, b)
+    | Ppat_variant (a, b) -> Ppat_variant (a, b)
+    | Ppat_record (a, b) -> Ppat_record (a, b)
+    | Ppat_array a -> Ppat_array a
+    | Ppat_or (a, b) -> Ppat_or (a, b)
+    | Ppat_type a -> Ppat_type a
+    | Ppat_lazy a -> Ppat_lazy a
+    | Ppat_unpack a -> Ppat_unpack a
+    | Ppat_exception a -> Ppat_exception a
+    | Ppat_extension a -> Ppat_extension a
+    | Ppat_open (a, b) -> Ppat_open (a, b)
+  ;;
+end
+
 module Expression_desc = struct
   type t =
     | Pexp_ident of Longident.t loc
@@ -186,6 +395,7 @@ module Expression_desc = struct
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
     | Pexp_tuple of expression list
+    | Pexp_unboxed_tuple of (string option * expression) list
     | Pexp_construct of Longident.t loc * expression option
     | Pexp_variant of label * expression option
     | Pexp_record of (Longident.t loc * expression) list * expression option
@@ -196,7 +406,7 @@ module Expression_desc = struct
     | Pexp_sequence of expression * expression
     | Pexp_while of expression * expression
     | Pexp_for of pattern * expression * expression * direction_flag * expression
-    | Pexp_constraint of expression * core_type
+    | Pexp_constraint of expression * core_type option * Modes.t
     | Pexp_coerce of expression * core_type option * core_type
     | Pexp_send of expression * label loc
     | Pexp_new of Longident.t loc
@@ -214,10 +424,29 @@ module Expression_desc = struct
     | Pexp_letop of letop
     | Pexp_extension of extension
     | Pexp_unreachable
+    | Pexp_stack of expression
 
   let to_parsetree : t -> expression_desc = function
+    (* changed constructors *)
     | Pexp_function (x1, x2, x3) ->
       Pexp_function.to_parsetree ~params:x1 ~constraint_:x2 ~body:x3
+    | Pexp_constraint (x1, Some x2, _) -> Pexp_constraint (x1, x2)
+    | Pexp_constraint (x1, None, _) -> Pexp_constraint (x1, ptyp_any)
+    (* new constructors *)
+    | Pexp_unboxed_tuple exps ->
+      let exps =
+        List.map
+          (fun (lbl, exp) ->
+            if Option.is_some lbl
+            then
+              failwith
+                "[Ppat_unboxed_tuple], when labels are present, is not a legal \
+                 [pattern_desc] in your parsetree";
+            exp)
+          exps
+      in
+      Pexp_tuple exps
+    (* unchanged constructors *)
     | Pexp_ident x -> Pexp_ident x
     | Pexp_constant x -> Pexp_constant x
     | Pexp_let (x1, x2, x3) -> Pexp_let (x1, x2, x3)
@@ -235,7 +464,6 @@ module Expression_desc = struct
     | Pexp_sequence (x1, x2) -> Pexp_sequence (x1, x2)
     | Pexp_while (x1, x2) -> Pexp_while (x1, x2)
     | Pexp_for (x1, x2, x3, x4, x5) -> Pexp_for (x1, x2, x3, x4, x5)
-    | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, x2)
     | Pexp_coerce (x1, x2, x3) -> Pexp_coerce (x1, x2, x3)
     | Pexp_send (x1, x2) -> Pexp_send (x1, x2)
     | Pexp_new x -> Pexp_new x
@@ -253,9 +481,12 @@ module Expression_desc = struct
     | Pexp_letop x -> Pexp_letop x
     | Pexp_extension x -> Pexp_extension x
     | Pexp_unreachable -> Pexp_unreachable
+    | Pexp_stack _ ->
+      failwith "[Pexp_stack] is not a legal [expression_desc] in your parsetree"
   ;;
 
   let of_parsetree (expr_desc : expression_desc) ~loc : t =
+    (* changed constructors *)
     match Pexp_function.of_parsetree expr_desc ~loc with
     | Some (x1, x2, x3) -> Pexp_function (x1, x2, x3)
     | None ->
@@ -263,6 +494,8 @@ module Expression_desc = struct
        | Pexp_function _ | Pexp_fun _ ->
          (* matched by above call to [of_parsetree] *)
          assert false
+       | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, Some x2, [])
+       (* unchanged constructors *)
        | Pexp_ident x -> Pexp_ident x
        | Pexp_constant x -> Pexp_constant x
        | Pexp_let (x1, x2, x3) -> Pexp_let (x1, x2, x3)
@@ -280,7 +513,6 @@ module Expression_desc = struct
        | Pexp_sequence (x1, x2) -> Pexp_sequence (x1, x2)
        | Pexp_while (x1, x2) -> Pexp_while (x1, x2)
        | Pexp_for (x1, x2, x3, x4, x5) -> Pexp_for (x1, x2, x3, x4, x5)
-       | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, x2)
        | Pexp_coerce (x1, x2, x3) -> Pexp_coerce (x1, x2, x3)
        | Pexp_send (x1, x2) -> Pexp_send (x1, x2)
        | Pexp_new x -> Pexp_new x
@@ -298,5 +530,101 @@ module Expression_desc = struct
        | Pexp_letop x -> Pexp_letop x
        | Pexp_extension x -> Pexp_extension x
        | Pexp_unreachable -> Pexp_unreachable)
+  ;;
+end
+
+module Include_infos = struct
+  type 'a t =
+    { pincl_kind : Include_kind.t
+    ; pincl_mod : 'a
+    ; pincl_loc : Location.t
+    ; pincl_attributes : attributes
+    }
+
+  let of_parsetree x : 'a t =
+    let ({ pincl_mod; pincl_loc; pincl_attributes } : 'a include_infos) = x in
+    let pincl_kind : Include_kind.t = Structure in
+    { pincl_kind; pincl_mod; pincl_loc; pincl_attributes }
+  ;;
+
+  let to_parsetree x : 'a include_infos =
+    let ({ pincl_kind; pincl_mod; pincl_loc; pincl_attributes } : 'a t) = x in
+    match pincl_kind with
+    | Structure -> { pincl_mod; pincl_loc; pincl_attributes }
+    | Functor -> failwith "[include functor] is not legal in your parsetree"
+  ;;
+end
+
+module Signature_item_desc = struct
+  type t =
+    | Psig_value of value_description
+    (** - [val x: T]
+            - [external x: T = "s1" ... "sn"]
+         *)
+    | Psig_type of rec_flag * type_declaration list
+    (** [type t1 = ... and ... and tn  = ...] *)
+    | Psig_typesubst of type_declaration list
+    (** [type t1 := ... and ... and tn := ...]  *)
+    | Psig_typext of type_extension (** [type t1 += ...] *)
+    | Psig_exception of type_exception (** [exception C of T] *)
+    | Psig_module of module_declaration (** [module X = M] and [module X : MT] *)
+    | Psig_modsubst of module_substitution (** [module X := M] *)
+    | Psig_recmodule of module_declaration list
+    (** [module rec X1 : MT1 and ... and Xn : MTn] *)
+    | Psig_modtype of module_type_declaration
+    (** [module type S = MT] and [module type S] *)
+    | Psig_modtypesubst of module_type_declaration (** [module type S :=  ...]  *)
+    | Psig_open of open_description (** [open X] *)
+    | Psig_include of include_description * Modalities.t (** [include MT] *)
+    | Psig_class of class_description list (** [class c1 : ... and ... and cn : ...] *)
+    | Psig_class_type of class_type_declaration list
+    (** [class type ct1 = ... and ... and ctn = ...] *)
+    | Psig_attribute of attribute (** [[\@\@\@id]] *)
+    | Psig_extension of extension * attributes (** [[%%id]] *)
+
+  let of_parsetree (sig_desc : signature_item_desc) =
+    match sig_desc with
+    | Psig_value a -> Psig_value a
+    | Psig_type (a, b) -> Psig_type (a, b)
+    | Psig_typesubst a -> Psig_typesubst a
+    | Psig_typext a -> Psig_typext a
+    | Psig_exception a -> Psig_exception a
+    | Psig_module a -> Psig_module a
+    | Psig_modsubst a -> Psig_modsubst a
+    | Psig_recmodule a -> Psig_recmodule a
+    | Psig_modtype a -> Psig_modtype a
+    | Psig_modtypesubst a -> Psig_modtypesubst a
+    | Psig_open a -> Psig_open a
+    | Psig_include a -> Psig_include (a, [])
+    | Psig_class a -> Psig_class a
+    | Psig_class_type a -> Psig_class_type a
+    | Psig_attribute a -> Psig_attribute a
+    | Psig_extension (a, b) -> Psig_extension (a, b)
+  ;;
+
+  let to_parsetree (t : t) : signature_item_desc =
+    match t with
+    | Psig_value a -> Psig_value a
+    | Psig_type (a, b) -> Psig_type (a, b)
+    | Psig_typesubst a -> Psig_typesubst a
+    | Psig_typext a -> Psig_typext a
+    | Psig_exception a -> Psig_exception a
+    | Psig_module a -> Psig_module a
+    | Psig_modsubst a -> Psig_modsubst a
+    | Psig_recmodule a -> Psig_recmodule a
+    | Psig_modtype a -> Psig_modtype a
+    | Psig_modtypesubst a -> Psig_modtypesubst a
+    | Psig_open a -> Psig_open a
+    | Psig_include (a, b) ->
+      if List.is_empty b
+      then Psig_include a
+      else
+        failwith
+          "[Psig_include] with modalities is not a legal [signature_item_desc] in your \
+           parsetree"
+    | Psig_class a -> Psig_class a
+    | Psig_class_type a -> Psig_class_type a
+    | Psig_attribute a -> Psig_attribute a
+    | Psig_extension (a, b) -> Psig_extension (a, b)
   ;;
 end

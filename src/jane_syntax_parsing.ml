@@ -672,22 +672,22 @@ module Signature_item0 = Make_with_extension_node (struct
 
     let make_extension_use ~extension_node sigi =
       Ast_helper.Sig.include_
-        { pincl_mod = Ast_helper.Mty.signature [ extension_node; sigi ]
-        ; pincl_loc = !Ast_helper.default_loc
-        ; pincl_attributes = []
-        }
+      @@ Ast_helper.Incl.mk
+           ~loc:!Ast_helper.default_loc
+           (Ast_helper.Mty.signature [ extension_node; sigi ])
     ;;
 
     let match_extension_use sigi =
-      match sigi.psig_desc with
+      match Shim.Signature_item_desc.of_parsetree sigi.psig_desc with
       | Psig_include
-          { pincl_mod =
-              { pmty_desc =
-                  Pmty_signature [ { psig_desc = Psig_extension (ext, []); _ }; sigi ]
-              ; _
-              }
-          ; _
-          } -> Some (ext, sigi)
+          ( { pincl_mod =
+                { pmty_desc =
+                    Pmty_signature [ { psig_desc = Psig_extension (ext, []); _ }; sigi ]
+                ; _
+                }
+            ; _
+            }
+          , _ ) -> Some (ext, sigi)
       | _ -> None
     ;;
   end)
@@ -706,10 +706,9 @@ module Structure_item0 = Make_with_extension_node (struct
 
     let make_extension_use ~extension_node stri =
       Ast_helper.Str.include_
-        { pincl_mod = Ast_helper.Mod.structure [ extension_node; stri ]
-        ; pincl_loc = !Ast_helper.default_loc
-        ; pincl_attributes = []
-        }
+      @@ Ast_helper.Incl.mk
+           ~loc:!Ast_helper.default_loc
+           (Ast_helper.Mod.structure [ extension_node; stri ])
     ;;
 
     let match_extension_use stri =

@@ -4,39 +4,47 @@
 <     automatically generated at [shim.mli.diff], so you'll find out if you change one but
 <     not the other *)
 < 
-44c39
+15c10
+<   type t = mode = Mode of string [@@unboxed]
+---
+>   type t = Mode of string [@@unboxed]
+26c21
+<   type t = include_kind =
+---
+>   type t =
+53c48
+<   type t = modality = Modality of string [@@unboxed]
+---
+>   type t = Modality of string [@@unboxed]
+64c59
 <   type t = constructor_argument
 ---
 >   type t = core_type
-82,84c77,79
-< type nonrec mode_expression = mode_expression
-< type nonrec mode_const_expression = mode_const_expression
+113c108
 < type nonrec jkind_const_annotation = jkind_const_annotation
 ---
-> type mode_const_expression = string Location.loc
-> type mode_expression = mode_const_expression list Location.loc
 > type jkind_const_annotation = string Location.loc
-86c81
+115c110
 < type nonrec jkind_annotation = jkind_annotation =
 ---
 > type jkind_annotation =
-95c90
+125c120
 <   type nonrec function_param_desc = function_param_desc =
 ---
 >   type function_param_desc =
-99c94
+129c124
 <   type nonrec function_param = function_param =
 ---
 >   type function_param =
-104c99
+134c129
 <   type nonrec type_constraint = type_constraint =
 ---
 >   type type_constraint =
-108c103
+138c133
 <   type nonrec function_constraint = function_constraint =
 ---
 >   type function_constraint =
-113c108
+143c138
 <   type nonrec function_body = function_body =
 ---
 >   type function_body =

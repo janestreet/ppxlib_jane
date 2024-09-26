@@ -11,16 +11,19 @@ module Pprintast = Ppxlib_ast.Pprintast
 module Parsetree = struct
   include Ppxlib_ast.Parsetree
 
-  type mode_expression = Shim.mode_expression
-  type mode_const_expression = Shim.mode_const_expression
+  type mode = Shim.Mode.t = Mode of string [@@unboxed]
+  type modes = Shim.Modes.t
+  type modality = Shim.Modality.t = Modality of string [@@unboxed]
+  type modalities = Shim.Modalities.t
   type jkind_const_annotation = Shim.jkind_const_annotation
 
   type jkind_annotation = Shim.jkind_annotation =
     | Default
     | Abbreviation of jkind_const_annotation
-    | Mod of jkind_annotation * mode_expression
+    | Mod of jkind_annotation * modes
     | With of jkind_annotation * core_type
     | Kind_of of core_type
+    | Product of jkind_annotation list
 end
 
 module Ast_helper = struct
@@ -63,4 +66,22 @@ module Printast = struct
   ;;
 
   let expression _ fmt x = Astlib.Pprintast.expression fmt x
+end
+
+module Misc = struct
+  module Stdlib = struct
+    module List = struct
+      let map_option f l =
+        let rec aux l acc =
+          match l with
+          | [] -> Some (List.rev acc)
+          | x :: xs ->
+            (match f x with
+             | None -> None
+             | Some x -> aux xs (x :: acc))
+        in
+        aux l []
+      ;;
+    end
+  end
 end

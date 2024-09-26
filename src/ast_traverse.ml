@@ -19,26 +19,30 @@ class ['ctx] map_with_context =
         let { txt; loc } = (jkind :> string loc) in
         Jane_syntax.Jkind.Const.mk (self#string ctx txt) (self#location ctx loc)
 
+    method mode : ('ctx, Shim.Mode.t) T.map_with_context =
+      fun ctx x ->
+        match x with
+        | Mode a ->
+          let a = self#string ctx a in
+          Mode a
+    [@@warning "-7"]
+    (* Silence "the following methods are overridden by the class," since we need to
+       compile against both the upstream shim (which does not define [mode]) and
+       our internal shim (which does). *)
+
+    method modes : ('ctx, Shim.Modes.t) T.map_with_context =
+      self#list (self#loc self#mode)
+    [@@warning "-7"]
+    (* See comment on [mode] *)
+
     method jkind : ('ctx, Jane_syntax.Jkind.t) T.map_with_context =
       fun ctx -> function
         | Default -> Default
         | Abbreviation const -> Abbreviation (self#const_jkind ctx const)
-        | Mod (jkind, mode_expr) ->
-          Mod (self#jkind ctx jkind, self#loc (self#list self#const_mode) ctx mode_expr)
+        | Mod (jkind, modes) -> Mod (self#jkind ctx jkind, self#modes ctx modes)
         | With (jkind, typ) -> With (self#jkind ctx jkind, self#core_type ctx typ)
         | Kind_of typ -> Kind_of (self#core_type ctx typ)
-
-    method const_mode : ('ctx, Jane_syntax.Mode_expr.Const.t) T.map_with_context =
-      fun ctx mode ->
-        let { txt; loc } = (mode :> string loc) in
-        Jane_syntax.Mode_expr.Const.mk (self#string ctx txt) (self#location ctx loc)
-
-    method! attributes ctx attrs =
-      let mode_expr, attrs = Jane_syntax.Mode_expr.of_attrs attrs in
-      Option.to_list
-        (Jane_syntax.Mode_expr.attr_of
-           (self#loc (self#list self#const_mode) ctx mode_expr))
-      @ super#attributes ctx attrs
+        | Product annots -> Product (List.map (self#jkind ctx) annots)
 
     method! constructor_declaration ctx decl =
       match Jane_syntax.Layouts.of_constructor_declaration decl with
@@ -173,7 +177,7 @@ class ['ctx] map_with_context =
     method function_constraint
       : ('ctx, Shim.Pexp_function.function_constraint) T.map_with_context =
       fun ctx { mode_annotations; type_constraint } ->
-        { mode_annotations = self#loc (self#list self#const_mode) ctx mode_annotations
+        { mode_annotations = self#modes ctx mode_annotations
         ; type_constraint =
             (match type_constraint with
              | Pconstraint typ -> Pconstraint (self#core_type ctx typ)
@@ -226,14 +230,7 @@ class ['ctx] map_with_context =
                     , self#expression ctx expr ))
            | Jexp_tuple exprs ->
              Jexp_tuple
-               (self#list (both (self#option self#string) self#expression) ctx exprs)
-           | Jexp_modes mexp ->
-             Jexp_modes
-               (match mexp with
-                | Coerce (modes, expr) ->
-                  Coerce
-                    ( self#loc (self#list self#const_mode) ctx modes
-                    , self#expression ctx expr )))
+               (self#list (both (self#option self#string) self#expression) ctx exprs))
       | None -> super#expression ctx expr
 
     method! pattern ctx pat =
@@ -273,12 +270,6 @@ class ['ctx] map_with_context =
 
     method! signature_item ctx sigi =
       match Jane_syntax.Signature_item.of_ast sigi with
-      | Some (Jsig_include_functor ifsigi) ->
-        Jane_syntax.Include_functor.sig_item_of
-          ~loc:(self#location ctx sigi.psig_loc)
-          (match ifsigi with
-           | Ifsig_include_functor desc ->
-             Ifsig_include_functor (self#include_description ctx desc))
       | Some (Jsig_layout lsigi) ->
         Jane_syntax.Layouts.sig_item_of
           ~loc:(self#location ctx sigi.psig_loc)
@@ -290,12 +281,6 @@ class ['ctx] map_with_context =
 
     method! structure_item ctx stri =
       match Jane_syntax.Structure_item.of_ast stri with
-      | Some (Jstr_include_functor ifstri) ->
-        Jane_syntax.Include_functor.str_item_of
-          ~loc:(self#location ctx stri.pstr_loc)
-          (match ifstri with
-           | Ifstr_include_functor decl ->
-             Ifstr_include_functor (self#include_declaration ctx decl))
       | Some (Jstr_layout lstri) ->
         Jane_syntax.Layouts.str_item_of
           ~loc:(self#location ctx stri.pstr_loc)
