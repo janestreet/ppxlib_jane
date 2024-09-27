@@ -19,8 +19,7 @@ open! Shadow_compiler_distribution
     In particular, for an language extension named [EXTNAME] (i.e., one that is
     enabled by [-extension EXTNAME] on the command line), the attribute (if
     used) must be [[@jane.ERASABILITY.EXTNAME]], and the extension node (if
-    used) must be [[%jane.ERASABILITY.EXTNAME]]. For built-in syntax, we use
-    [_builtin] instead of an language extension name.
+    used) must be [[%jane.ERASABILITY.EXTNAME]].
 
     The [ERASABILITY] component indicates to tools such as ocamlformat and
     ppxlib whether or not the attribute is erasable. See the documentation of
@@ -99,9 +98,7 @@ end
 (******************************************************************************)
 
 module Feature : sig
-  type t =
-    | Language_extension : _ Language_extension.t -> t
-    | Builtin
+  type t = Language_extension : _ Language_extension.t -> t
 
   type error =
     | Disabled_extension : _ Language_extension.t -> error
@@ -112,45 +109,32 @@ module Feature : sig
   val of_component : string -> (t, error) result
   val is_erasable : t -> bool
 end = struct
-  type t =
-    | Language_extension : _ Language_extension.t -> t
-    | Builtin
+  type t = Language_extension : _ Language_extension.t -> t
 
   type error =
     | Disabled_extension : _ Language_extension.t -> error
     | Unknown_extension of string
 
-  let builtin_component = "_builtin"
-
   let describe_uppercase = function
     | Language_extension ext ->
       "The extension \"" ^ Language_extension.to_string ext ^ "\""
-    | Builtin -> "Built-in syntax"
   ;;
 
   let extension_component = function
     | Language_extension ext -> Language_extension.to_string ext
-    | Builtin -> builtin_component
   ;;
 
   let of_component str =
-    if String.equal str builtin_component
-    then Ok Builtin
-    else (
-      match Language_extension.of_string str with
-      | Some (Pack ext) ->
-        if Language_extension.is_enabled ext
-        then Ok (Language_extension ext)
-        else Error (Disabled_extension ext)
-      | None -> Error (Unknown_extension str))
+    match Language_extension.of_string str with
+    | Some (Pack ext) ->
+      if Language_extension.is_enabled ext
+      then Ok (Language_extension ext)
+      else Error (Disabled_extension ext)
+    | None -> Error (Unknown_extension str)
   ;;
 
   let is_erasable = function
     | Language_extension ext -> Language_extension.is_erasable ext
-    (* Builtin syntax changes don't involve additions or changes to concrete
-       syntax and are always erasable.
-    *)
-    | Builtin -> true
   ;;
 end
 
@@ -182,7 +166,7 @@ module Embedding_syntax = struct
       | Extension_node -> "%"
       | Attribute -> "@"
     in
-    Format.fprintf ppf "[%s%s]" sigil name
+    Format_doc.fprintf ppf "[%s%s]" sigil name
   ;;
 end
 
@@ -274,12 +258,12 @@ module Embedded_name : sig
 
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)
-  val pp_quoted_name : Format.formatter -> t -> unit
+  val pp_quoted_name : Format_doc.formatter -> t -> unit
 
   (** Print out an empty extension node or attribute with a Jane-syntax name,
       accompanied by an indefinite article; for use in error messages.  Not
       exposed. *)
-  val pp_a_term : Format.formatter -> Embedding_syntax.t * t -> unit
+  val pp_a_term : Format_doc.formatter -> Embedding_syntax.t * t -> unit
 end = struct
   (** The three parameters that control how we encode Jane-syntax extension node
       names.  When updating these, update comments that refer to them by their
@@ -336,10 +320,10 @@ end = struct
     | _ :: _ | [] -> None
   ;;
 
-  let pp_quoted_name ppf t = Format.fprintf ppf "\"%s\"" (to_string t)
+  let pp_quoted_name ppf t = Format_doc.fprintf ppf "\"%s\"" (to_string t)
 
   let pp_a_term ppf (esyn, t) =
-    Format.fprintf ppf "%s %a" article Embedding_syntax.pp (esyn, to_string t)
+    Format_doc.fprintf ppf "%s %a" article Embedding_syntax.pp (esyn, to_string t)
   ;;
 end
 
@@ -520,11 +504,11 @@ let make_jane_syntax_attribute name payload =
     our novel syntax, using parsetree attributes as the encoding.
 *)
 module Make_with_attribute (AST_syntactic_category : sig
-  include AST_syntactic_category
+    include AST_syntactic_category
 
-  val attributes : ast -> attributes
-  val with_attributes : ast -> attributes -> ast
-end) : AST_internal with type ast = AST_syntactic_category.ast = struct
+    val attributes : ast -> attributes
+    val with_attributes : ast -> attributes -> ast
+  end) : AST_internal with type ast = AST_syntactic_category.ast = struct
   include AST_syntactic_category
 
   let embedding_syntax = Embedding_syntax.Attribute
@@ -547,28 +531,28 @@ end
     our novel syntax, using extension nodes as the encoding.
 *)
 module Make_with_extension_node (AST_syntactic_category : sig
-  include AST_syntactic_category
+    include AST_syntactic_category
 
-  (** How to construct an extension node for this AST (something of the
+    (** How to construct an extension node for this AST (something of the
           shape [[%name]]). Should just be [Ast_helper.CAT.extension] for the
           appropriate syntactic category [CAT]. (This means that [?loc] should
           default to [!Ast_helper.default_loc.].) *)
-  val make_extension_node : ?loc:Location.t -> ?attrs:attributes -> extension -> ast
+    val make_extension_node : ?loc:Location.t -> ?attrs:attributes -> extension -> ast
 
-  (** Given an extension node (as created by [make_extension_node]) with an
+    (** Given an extension node (as created by [make_extension_node]) with an
           appropriately-formed name and a body, combine them into the special
           syntactic form we use for novel syntactic features in this syntactic
           category. Partial inverse of [match_extension_use]. *)
-  val make_extension_use : extension_node:ast -> ast -> ast
+    val make_extension_use : extension_node:ast -> ast -> ast
 
-  (** Given an AST node, check if it's of the special syntactic form
+    (** Given an AST node, check if it's of the special syntactic form
           indicating that this is one of our novel syntactic features (as
           created by [make_extension_node]), split it back up into the extension
           node and the possible body. Doesn't do any checking about the
           name/format of the extension or the possible body terms (for which see
           [AST.match_extension]). Partial inverse of [make_extension_use]. *)
-  val match_extension_use : ast -> (extension * ast) option
-end) : AST_internal with type ast = AST_syntactic_category.ast = struct
+    val match_extension_use : ast -> (extension * ast) option
+  end) : AST_internal with type ast = AST_syntactic_category.ast = struct
   include AST_syntactic_category
 
   let embedding_syntax = Embedding_syntax.Extension_node
@@ -618,151 +602,150 @@ end
 
 (** Types; embedded with attributes. *)
 module Core_type0 = Make_with_attribute (struct
-  include Type_AST_syntactic_category
+    include Type_AST_syntactic_category
 
-  let plural = "types"
-end)
+    let plural = "types"
+  end)
 
 (** Constructor arguments; the same as types, but used in fewer places *)
 module Constructor_argument0 = Make_with_attribute (struct
-  include Type_AST_syntactic_category
+    include Type_AST_syntactic_category
 
-  let plural = "constructor arguments"
-end)
+    let plural = "constructor arguments"
+  end)
 
 (** Expressions; embedded using an attribute on the expression. *)
 module Expression0 = Make_with_attribute (struct
-  type ast = expression
+    type ast = expression
 
-  let plural = "expressions"
-  let location expr = expr.pexp_loc
-  let with_location expr l = { expr with pexp_loc = l }
-  let attributes expr = expr.pexp_attributes
-  let with_attributes expr pexp_attributes = { expr with pexp_attributes }
-end)
+    let plural = "expressions"
+    let location expr = expr.pexp_loc
+    let with_location expr l = { expr with pexp_loc = l }
+    let attributes expr = expr.pexp_attributes
+    let with_attributes expr pexp_attributes = { expr with pexp_attributes }
+  end)
 
 (** Patterns; embedded using an attribute on the pattern. *)
 module Pattern0 = Make_with_attribute (struct
-  type ast = pattern
+    type ast = pattern
 
-  let plural = "patterns"
-  let location pat = pat.ppat_loc
-  let with_location pat l = { pat with ppat_loc = l }
-  let attributes pat = pat.ppat_attributes
-  let with_attributes pat ppat_attributes = { pat with ppat_attributes }
-end)
+    let plural = "patterns"
+    let location pat = pat.ppat_loc
+    let with_location pat l = { pat with ppat_loc = l }
+    let attributes pat = pat.ppat_attributes
+    let with_attributes pat ppat_attributes = { pat with ppat_attributes }
+  end)
 
 (** Module types; embedded using an attribute on the module type. *)
 module Module_type0 = Make_with_attribute (struct
-  type ast = module_type
+    type ast = module_type
 
-  let plural = "module types"
-  let location mty = mty.pmty_loc
-  let with_location mty l = { mty with pmty_loc = l }
-  let attributes mty = mty.pmty_attributes
-  let with_attributes mty pmty_attributes = { mty with pmty_attributes }
-end)
+    let plural = "module types"
+    let location mty = mty.pmty_loc
+    let with_location mty l = { mty with pmty_loc = l }
+    let attributes mty = mty.pmty_attributes
+    let with_attributes mty pmty_attributes = { mty with pmty_attributes }
+  end)
 
 (** Extension constructors; embedded using an attribute. *)
 module Extension_constructor0 = Make_with_attribute (struct
-  type ast = extension_constructor
+    type ast = extension_constructor
 
-  let plural = "extension constructors"
-  let location ext = ext.pext_loc
-  let with_location ext l = { ext with pext_loc = l }
-  let attributes ext = ext.pext_attributes
-  let with_attributes ext pext_attributes = { ext with pext_attributes }
-end)
+    let plural = "extension constructors"
+    let location ext = ext.pext_loc
+    let with_location ext l = { ext with pext_loc = l }
+    let attributes ext = ext.pext_attributes
+    let with_attributes ext pext_attributes = { ext with pext_attributes }
+  end)
 
 (** Signature items; embedded as
     [include sig [%%extension.EXTNAME];; BODY end]. Signature items don't have
     attributes or we'd use them instead.
 *)
 module Signature_item0 = Make_with_extension_node (struct
-  type ast = signature_item
+    type ast = signature_item
 
-  let plural = "signature items"
-  let location sigi = sigi.psig_loc
-  let with_location sigi l = { sigi with psig_loc = l }
-  let make_extension_node = Ast_helper.Sig.extension
+    let plural = "signature items"
+    let location sigi = sigi.psig_loc
+    let with_location sigi l = { sigi with psig_loc = l }
+    let make_extension_node = Ast_helper.Sig.extension
 
-  let make_extension_use ~extension_node sigi =
-    Ast_helper.Sig.include_
-      { pincl_mod = Ast_helper.Mty.signature [ extension_node; sigi ]
-      ; pincl_loc = !Ast_helper.default_loc
-      ; pincl_attributes = []
-      }
-  ;;
+    let make_extension_use ~extension_node sigi =
+      Ast_helper.Sig.include_
+      @@ Ast_helper.Incl.mk
+           ~loc:!Ast_helper.default_loc
+           (Ast_helper.Mty.signature [ extension_node; sigi ])
+    ;;
 
-  let match_extension_use sigi =
-    match sigi.psig_desc with
-    | Psig_include
-        { pincl_mod =
-            { pmty_desc =
-                Pmty_signature [ { psig_desc = Psig_extension (ext, []); _ }; sigi ]
+    let match_extension_use sigi =
+      match Shim.Signature_item_desc.of_parsetree sigi.psig_desc with
+      | Psig_include
+          ( { pincl_mod =
+                { pmty_desc =
+                    Pmty_signature [ { psig_desc = Psig_extension (ext, []); _ }; sigi ]
+                ; _
+                }
             ; _
             }
-        ; _
-        } -> Some (ext, sigi)
-    | _ -> None
-  ;;
-end)
+          , _ ) -> Some (ext, sigi)
+      | _ -> None
+    ;;
+  end)
 
 (** Structure items; embedded as
     [include struct [%%extension.EXTNAME];; BODY end]. Structure items don't
     have attributes or we'd use them instead.
 *)
 module Structure_item0 = Make_with_extension_node (struct
-  type ast = structure_item
+    type ast = structure_item
 
-  let plural = "structure items"
-  let location stri = stri.pstr_loc
-  let with_location stri l = { stri with pstr_loc = l }
-  let make_extension_node = Ast_helper.Str.extension
+    let plural = "structure items"
+    let location stri = stri.pstr_loc
+    let with_location stri l = { stri with pstr_loc = l }
+    let make_extension_node = Ast_helper.Str.extension
 
-  let make_extension_use ~extension_node stri =
-    Ast_helper.Str.include_
-      { pincl_mod = Ast_helper.Mod.structure [ extension_node; stri ]
-      ; pincl_loc = !Ast_helper.default_loc
-      ; pincl_attributes = []
-      }
-  ;;
+    let make_extension_use ~extension_node stri =
+      Ast_helper.Str.include_
+      @@ Ast_helper.Incl.mk
+           ~loc:!Ast_helper.default_loc
+           (Ast_helper.Mod.structure [ extension_node; stri ])
+    ;;
 
-  let match_extension_use stri =
-    match stri.pstr_desc with
-    | Pstr_include
-        { pincl_mod =
-            { pmod_desc =
-                Pmod_structure [ { pstr_desc = Pstr_extension (ext, []); _ }; stri ]
-            ; _
-            }
-        ; _
-        } -> Some (ext, stri)
-    | _ -> None
-  ;;
-end)
+    let match_extension_use stri =
+      match stri.pstr_desc with
+      | Pstr_include
+          { pincl_mod =
+              { pmod_desc =
+                  Pmod_structure [ { pstr_desc = Pstr_extension (ext, []); _ }; stri ]
+              ; _
+              }
+          ; _
+          } -> Some (ext, stri)
+      | _ -> None
+    ;;
+  end)
 
 (** Constructor declarations; embedded with attributes. *)
 module Constructor_declaration0 = Make_with_attribute (struct
-  type ast = Parsetree.constructor_declaration
+    type ast = Parsetree.constructor_declaration
 
-  let plural = "constructor declarations"
-  let location pcd = pcd.pcd_loc
-  let with_location pcd loc = { pcd with pcd_loc = loc }
-  let attributes pcd = pcd.pcd_attributes
-  let with_attributes pcd pcd_attributes = { pcd with pcd_attributes }
-end)
+    let plural = "constructor declarations"
+    let location pcd = pcd.pcd_loc
+    let with_location pcd loc = { pcd with pcd_loc = loc }
+    let attributes pcd = pcd.pcd_attributes
+    let with_attributes pcd pcd_attributes = { pcd with pcd_attributes }
+  end)
 
 (** Type declarations; embedded with attributes. *)
 module Type_declaration0 = Make_with_attribute (struct
-  type ast = Parsetree.type_declaration
+    type ast = Parsetree.type_declaration
 
-  let plural = "type declarations"
-  let location ptype = ptype.ptype_loc
-  let with_location ptype loc = { ptype with ptype_loc = loc }
-  let attributes ptype = ptype.ptype_attributes
-  let with_attributes ptype ptype_attributes = { ptype with ptype_attributes }
-end)
+    let plural = "type declarations"
+    let location ptype = ptype.ptype_loc
+    let with_location ptype loc = { ptype with ptype_loc = loc }
+    let attributes ptype = ptype.ptype_attributes
+    let with_attributes ptype ptype_attributes = { ptype with ptype_attributes }
+  end)
 
 (******************************************************************************)
 (* Main exports *)

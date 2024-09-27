@@ -21,7 +21,7 @@ type maturity =
     or off, while a [maturity t] can have different maturity settings. *)
 type _ t =
   | Comprehensions : unit t
-  | Mode : unit t
+  | Mode : maturity t
   | Unique : unit t
   | Include_functor : unit t
   | Polymorphic_parameters : unit t
@@ -30,21 +30,21 @@ type _ t =
   | Layouts : maturity t
   | SIMD : unit t
   | Labeled_tuples : unit t
-  | Small_numbers : unit t
+  | Small_numbers : maturity t
 
 module Exist : sig
-  type 'a extn = 'a t
-  type t = Pack : _ extn -> t
+    type 'a extn = 'a t
+    type t = Pack : _ extn -> t
 
-  val all : t list
-end
-with type 'a extn := 'a t
+    val all : t list
+  end
+  with type 'a extn := 'a t
 
 module Exist_pair : sig
-  type 'a extn = 'a t
-  type t = Pair : 'a extn * 'a -> t
-end
-with type 'a extn := 'a t
+    type 'a extn = 'a t
+    type t = Pair : 'a extn * 'a -> t
+  end
+  with type 'a extn := 'a t
 
 (** Print and parse language extensions; parsing is case-insensitive *)
 val to_string : _ t -> string

@@ -99,14 +99,16 @@ open! Shadow_compiler_distribution
     language extension (separated out by which one) or the collection of all
     built-in features. *)
 module Feature : sig
-  type t =
-    | Language_extension : _ Language_extension.t -> t
-    | Builtin
+  type t = Language_extension : _ Language_extension.t -> t
 
   (** The component of an attribute or extension name that identifies the
       feature. This is third component.
   *)
   val extension_component : t -> string
+end
+
+module Misnamed_embedding_error : sig
+  type t
 end
 
 (** An AST-style representation of the names used when generating extension
@@ -143,9 +145,11 @@ module Embedded_name : sig
       infrastructure in this module, such as the dummy argument extension *)
   val to_string : t -> string
 
+  val of_string : string -> (t, Misnamed_embedding_error.t) result option
+
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)
-  val pp_quoted_name : Format.formatter -> t -> unit
+  val pp_quoted_name : Format_doc.formatter -> t -> unit
 end
 
 (** Each syntactic category that contains novel syntactic features has a

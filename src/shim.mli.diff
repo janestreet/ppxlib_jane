@@ -1,0 +1,50 @@
+8,12d7
+< (** When you change one of [shim.{ml,mli}], please also consider if you need to make
+<     changes to the corresponding [shim_upstream.{ml,mli}]. A diff between the mli files is
+<     automatically generated at [shim.mli.diff], so you'll find out if you change one but
+<     not the other *)
+< 
+15c10
+<   type t = mode = Mode of string [@@unboxed]
+---
+>   type t = Mode of string [@@unboxed]
+26c21
+<   type t = include_kind =
+---
+>   type t =
+53c48
+<   type t = modality = Modality of string [@@unboxed]
+---
+>   type t = Modality of string [@@unboxed]
+64c59
+<   type t = constructor_argument
+---
+>   type t = core_type
+113c108
+< type nonrec jkind_const_annotation = jkind_const_annotation
+---
+> type jkind_const_annotation = string Location.loc
+115c110
+< type nonrec jkind_annotation = jkind_annotation =
+---
+> type jkind_annotation =
+125c120
+<   type nonrec function_param_desc = function_param_desc =
+---
+>   type function_param_desc =
+129c124
+<   type nonrec function_param = function_param =
+---
+>   type function_param =
+134c129
+<   type nonrec type_constraint = type_constraint =
+---
+>   type type_constraint =
+138c133
+<   type nonrec function_constraint = function_constraint =
+---
+>   type function_constraint =
+143c138
+<   type nonrec function_body = function_body =
+---
+>   type function_body =
