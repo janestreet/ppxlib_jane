@@ -218,7 +218,7 @@ module Core_type_desc = struct
     | Ptyp_constr of Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
     | Ptyp_class of Longident.t loc * core_type list
-    | Ptyp_alias of core_type * string
+    | Ptyp_alias of core_type * string loc
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of string loc list * core_type
     | Ptyp_package of package_type
@@ -234,7 +234,9 @@ module Core_type_desc = struct
     | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
     | Ptyp_object (a, b) -> Ptyp_object (a, b)
     | Ptyp_class (a, b) -> Ptyp_class (a, b)
-    | Ptyp_alias (a, b) -> Ptyp_alias (a, b)
+    | Ptyp_alias (a, b) ->
+      let ghost_alias_loc = { a.ptyp_loc with loc_ghost = false } in
+      Ptyp_alias (a, { txt = b; loc = ghost_alias_loc })
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_poly (a, b) -> Ptyp_poly (a, b)
     | Ptyp_package a -> Ptyp_package a
@@ -265,7 +267,7 @@ module Core_type_desc = struct
     | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
     | Ptyp_object (a, b) -> Ptyp_object (a, b)
     | Ptyp_class (a, b) -> Ptyp_class (a, b)
-    | Ptyp_alias (a, b) -> Ptyp_alias (a, b)
+    | Ptyp_alias (a, b) -> Ptyp_alias (a, b.txt)
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_poly (a, b) -> Ptyp_poly (a, b)
     | Ptyp_package a -> Ptyp_package a

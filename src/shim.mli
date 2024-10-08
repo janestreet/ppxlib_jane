@@ -161,7 +161,7 @@ module Core_type_desc : sig
     | Ptyp_constr of Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
     | Ptyp_class of Longident.t loc * core_type list
-    | Ptyp_alias of core_type * string
+    | Ptyp_alias of core_type * string loc
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of string loc list * core_type
     | Ptyp_package of package_type

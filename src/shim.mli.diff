@@ -48,3 +48,27 @@
 <   type nonrec function_body = function_body =
 ---
 >   type function_body =
+160c155
+<   type t = core_type_desc =
+---
+>   type t =
+180c175
+<   type t = core_type =
+---
+>   type t =
+192c187
+<   type t = pattern_desc =
+---
+>   type t =
+218c213
+<   type t = expression_desc =
+---
+>   type t =
+266c261
+<   type 'a t = 'a include_infos =
+---
+>   type 'a t =
+278c273
+<   type t = signature_item_desc =
+---
+>   type t =

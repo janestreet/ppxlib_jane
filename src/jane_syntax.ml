@@ -1060,7 +1060,7 @@ module Layouts = struct
         }
     | Ltyp_alias of
         { aliased_type : core_type
-        ; name : string option
+        ; name : string loc option
         ; jkind : Jkind.annotation
         }
 
@@ -1281,7 +1281,7 @@ module Layouts = struct
           { aliased_type = { typ with ptyp_attributes = attributes }; name = None; jkind }
       | [ "alias"; "named" ] ->
         let jkind = Decode.from_payload ~loc payload in
-        (match typ.ptyp_desc with
+        (match Shim.Core_type_desc.of_parsetree typ.ptyp_desc with
          | Ptyp_alias (inner_typ, name) ->
            Ltyp_alias { aliased_type = inner_typ; name = Some name; jkind }
          | _ -> Desugaring_error.raise ~loc (Unexpected_wrapped_type typ))

@@ -3,6 +3,8 @@ module Ast_builder = Ast_builder
 module Ast_traverse = Ast_traverse
 module Jane_syntax = Jane_syntax
 module Legacy_pexp_function = Legacy_pexp_function
+module Language_feature_name = Names.Language_feature_name
+module Constructor_name = Names.Constructor_name
 
 (** {2 Common helper functions} *)
 include Common

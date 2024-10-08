@@ -120,7 +120,7 @@ class ['ctx] map_with_context =
                 | Ltyp_alias { aliased_type; name; jkind } ->
                   Ltyp_alias
                     { aliased_type = self#core_type ctx aliased_type
-                    ; name = self#option self#string ctx name
+                    ; name = self#option (self#loc self#string) ctx name
                     ; jkind = self#loc self#jkind ctx jkind
                     })
            | Jtyp_tuple types ->

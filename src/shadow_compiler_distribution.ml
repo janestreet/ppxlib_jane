@@ -46,6 +46,12 @@ module Ast_helper = struct
       constructor ~loc ~vars ~args ?res name
     ;;
   end
+
+  module Typ = struct
+    include Typ
+
+    let alias ?attrs ?loc a (b : _ with_loc) = alias ?attrs ?loc a b.txt
+  end
 end
 
 module Printast = struct
