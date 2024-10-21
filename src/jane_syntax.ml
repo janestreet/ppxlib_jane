@@ -61,9 +61,9 @@ end = struct
       | Not_this_embedding name ->
         Location.errorf
           ~loc
-          "Tried to desugar the embedded term %a@ as belonging to the %s extension"
-          Embedded_name.pp_quoted_name
-          name
+          "Tried to desugar the embedded term %t@ as belonging to the %s extension"
+          (Format_doc.deprecated_printer (fun ppf ->
+             Embedded_name.pp_quoted_name ppf name))
           extension_string
       | Non_embedding ->
         Location.errorf
@@ -264,11 +264,10 @@ struct
         let indefinite_article, name = Encodable.indefinite_article_and_name in
         Location.errorf
           ~loc
-          "Attribute payload does not name %s %s:@;%a"
+          "Attribute payload does not name %s %s:@;%t"
           indefinite_article
           name
-          (Printast.payload 0)
-          payload
+          (Format_doc.deprecated_printer (fun ppf -> (Printast.payload 0) ppf payload))
     ;;
 
     exception Error of Location.t * error
@@ -315,9 +314,9 @@ struct
         | PStr items ->
           List.map
             (fun item ->
-              if is_none_structure_item item
-              then None
-              else Some (from_structure_item item))
+               if is_none_structure_item item
+               then None
+               else Some (from_structure_item item))
             items
         | _ -> raise Unexpected
       ;;
@@ -695,15 +694,14 @@ module Comprehensions = struct
       | Has_payload payload ->
         Location.errorf
           ~loc
-          "Comprehensions attribute has an unexpected payload:@;%a"
-          (Printast.payload 0)
-          payload
+          "Comprehensions attribute has an unexpected payload:@;%t"
+          (Format_doc.deprecated_printer (fun ppf -> (Printast.payload 0) ppf payload))
       | Bad_comprehension_embedding subparts ->
         Location.errorf
           ~loc
-          "Unknown, unexpected, or malformed@ comprehension embedded term %a"
-          Embedded_name.pp_quoted_name
-          (Embedded_name.of_feature feature subparts)
+          "Unknown, unexpected, or malformed@ comprehension embedded term %t"
+          (Format_doc.deprecated_printer (fun ppf ->
+             Embedded_name.pp_quoted_name ppf (Embedded_name.of_feature feature subparts)))
       | No_clauses ->
         Location.errorf ~loc "Tried to desugar a comprehension with no clauses"
     ;;
@@ -865,9 +863,8 @@ module Labeled_tuples = struct
       | Has_payload payload ->
         Location.errorf
           ~loc
-          "Labeled tuples attribute has an unexpected payload:@;%a"
-          (Printast.payload 0)
-          payload
+          "Labeled tuples attribute has an unexpected payload:@;%t"
+          (Format_doc.deprecated_printer (fun ppf -> (Printast.payload 0) ppf payload))
     ;;
 
     exception Error of Location.t * error
@@ -1098,11 +1095,13 @@ module Layouts = struct
       | Unexpected_attribute names ->
         Location.errorf
           ~loc
-          "Layout extension does not understand these attribute names:@;[%a]"
-          (Format.pp_print_list
-             ~pp_sep:(fun ppf () -> Format.fprintf ppf ";@ ")
-             Format.pp_print_text)
-          names
+          "Layout extension does not understand these attribute names:@;[%t]"
+          (Format_doc.deprecated_printer (fun ppf ->
+             (Format.pp_print_list
+                ~pp_sep:(fun ppf () -> Format.fprintf ppf ";@ ")
+                Format.pp_print_text)
+               ppf
+               names))
       | No_integer_suffix ->
         Location.errorf
           ~loc
@@ -1111,9 +1110,8 @@ module Layouts = struct
       | Unexpected_wrapped_expr expr ->
         Location.errorf
           ~loc
-          "Layout attribute on wrong expression:@;%a"
-          (Printast.expression 0)
-          expr
+          "Layout attribute on wrong expression:@;%t"
+          (Format_doc.deprecated_printer (fun ppf -> (Printast.expression 0) ppf expr))
       | Unexpected_wrapped_pat _pat ->
         Location.errorf ~loc "Layout attribute on wrong pattern"
     ;;
@@ -1394,17 +1392,17 @@ module Layouts = struct
   module Type_decl_of = Ast_of (Type_declaration) (Ext)
 
   let type_declaration_of
-    ~loc
-    ~attrs
-    ~docs
-    ~text
-    ~params
-    ~cstrs
-    ~kind
-    ~priv
-    ~manifest
-    ~jkind
-    name
+        ~loc
+        ~attrs
+        ~docs
+        ~text
+        ~params
+        ~cstrs
+        ~kind
+        ~priv
+        ~manifest
+        ~jkind
+        name
     =
     let type_decl =
       Ast_helper.Type.mk ~loc ~docs ?text ~params ~cstrs ~kind ~priv ?manifest name

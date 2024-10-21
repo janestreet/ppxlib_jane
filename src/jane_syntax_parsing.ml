@@ -365,18 +365,17 @@ let report_error ~loc = function
   | Introduction_has_payload (what, name, _payload) ->
     Location.errorf
       ~loc
-      "@[Modular syntax %s are not allowed to have a payload,@ but %a does@]"
+      "@[Modular syntax %s are not allowed to have a payload,@ but %t does@]"
       (Embedding_syntax.name_plural what)
-      Embedded_name.pp_quoted_name
-      name
+      (Format_doc.deprecated_printer (fun ppf -> Embedded_name.pp_quoted_name ppf name))
   | Unknown_extension (what, erasability, name) ->
     let embedded_name = { Embedded_name.erasability; components = [ name ] } in
     Location.errorf
       ~loc
-      "@[Unknown extension \"%s\" referenced via@ %a %s@]"
+      "@[Unknown extension \"%s\" referenced via@ %t %s@]"
       name
-      Embedded_name.pp_a_term
-      (what, embedded_name)
+      (Format_doc.deprecated_printer (fun ppf ->
+         Embedded_name.pp_a_term ppf (what, embedded_name)))
       (Embedding_syntax.name what)
   | Disabled_extension { ext; maturity } ->
     (match maturity with
@@ -397,22 +396,20 @@ let report_error ~loc = function
   | Misnamed_embedding (err, name, what) ->
     Location.errorf
       ~loc
-      "Cannot have %s named %a: %s"
+      "Cannot have %s named %t: %s"
       (Embedding_syntax.name_indefinite what)
-      Embedding_syntax.pp
-      (what, name)
+      (Format_doc.deprecated_printer (fun ppf -> Embedding_syntax.pp ppf (what, name)))
       (Misnamed_embedding_error.to_string err)
   | Bad_introduction (what, ({ components = ext :: _; _ } as name)) ->
     Location.errorf
       ~loc
-      "@[The extension \"%s\" was referenced improperly; it started with@ %a %s,@ not %a \
+      "@[The extension \"%s\" was referenced improperly; it started with@ %t %s,@ not %t \
        one@]"
       ext
-      Embedded_name.pp_a_term
-      (what, name)
+      (Format_doc.deprecated_printer (fun ppf -> Embedded_name.pp_a_term ppf (what, name)))
       (Embedding_syntax.name what)
-      Embedded_name.pp_a_term
-      (what, { name with components = [ ext ] })
+      (Format_doc.deprecated_printer (fun ppf ->
+         Embedded_name.pp_a_term ppf (what, { name with components = [ ext ] })))
 ;;
 
 let () =
