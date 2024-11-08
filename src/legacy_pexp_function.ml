@@ -50,7 +50,8 @@ let of_pexp_function
            let pexp_desc =
              match type_constraint with
              | Pcoerce (ty1, ty2) -> Pexp_coerce (expr, ty1, ty2)
-             | Pconstraint ty -> Pexp_constraint (expr, ty)
+             | Pconstraint ty ->
+               Pexp_constraint (expr, Some ty, []) |> Shim.Expression_desc.to_parsetree
            in
            Ppxlib_ast.Ast_helper.Exp.mk
              pexp_desc

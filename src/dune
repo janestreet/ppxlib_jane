@@ -1,6 +1,6 @@
 (library
  (name ppxlib_jane)
  (public_name ppxlib_jane)
- (libraries compiler-libs.common ppxlib.ast ppxlib.astlib
-   ppxlib.traverse_builtins ppxlib.stdppx)
+ (libraries compiler-libs.common ppxlib_ast.ast ppxlib_ast.astlib
+   ppxlib_ast.traverse_builtins ppxlib_ast.stdppx)
  (preprocess no_preprocessing))

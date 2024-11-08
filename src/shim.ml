@@ -1,38 +1,84 @@
+open Stdppx
 open Ppxlib_ast.Asttypes
 open Ppxlib_ast.Parsetree
-module Ast_helper = Ppxlib_ast.Ast_helper
 
-type mode = Mode of string [@@unboxed]
+module Modality = struct
+  type nonrec t = modality = Modality of string [@@unboxed]
+
+  let to_ast_modalities_list ~loc modalities =
+    List.map modalities ~f:(fun modality -> { txt = modality; loc })
+  ;;
+
+  let of_ast_modalities_list ast_modalities =
+    List.map ast_modalities ~f:(fun { txt = modality; _ } -> modality)
+  ;;
+end
+
+module Modalities = struct
+  type t = Modality.t loc list
+end
+
+module Mode = struct
+  type t = mode = Mode of string [@@unboxed]
+end
+
+module Modes = struct
+  type t = Mode.t loc list
+
+  let local = [ { txt = Mode "local"; loc = Location.none } ]
+  let none = []
+end
+
+module Include_kind = struct
+  type t = include_kind =
+    | Structure
+    | Functor
+end
 
 type arrow_argument =
   { arg_label : arg_label
-  ; arg_modes : mode list
+  ; arg_modes : Modes.t
   ; arg_type : core_type
   }
 
 type arrow_result =
-  { result_modes : mode list
+  { result_modes : Modes.t
   ; result_type : core_type
   }
 
-type modality = Modality of string [@@unboxed]
-
 module Pcstr_tuple_arg = struct
-  type t = core_type
+  type t = constructor_argument
 
-  let extract_modalities t = [], t
-  let to_core_type t = t
-  let of_core_type core_type = core_type
-  let map_core_type t ~f = f t
-  let map_core_type_extra t ~f = f t
-  let create ~loc:_ ~modalities:_ ~type_ = type_
+  let extract_modalities t = Modality.of_ast_modalities_list t.pca_modalities, t.pca_type
+  let to_core_type t = t.pca_type
+
+  let of_core_type core_type =
+    { pca_type = core_type; pca_loc = core_type.ptyp_loc; pca_modalities = [] }
+  ;;
+
+  let map_core_type t ~f = { t with pca_type = f t.pca_type }
+
+  let map_core_type_extra t ~f =
+    let pca_type, extra = f t.pca_type in
+    { t with pca_type }, extra
+  ;;
+
+  let create ~loc ~modalities ~type_ =
+    { pca_type = type_
+    ; pca_loc = loc
+    ; pca_modalities = Modality.to_ast_modalities_list ~loc modalities
+    }
+  ;;
 end
 
 module Label_declaration = struct
-  let extract_modalities ld = [], ld
+  let extract_modalities ld =
+    Modality.of_ast_modalities_list ld.pld_modalities, { ld with pld_modalities = [] }
+  ;;
 
-  let create ~loc ~name ~mutable_ ~modalities:_ ~type_ =
+  let create ~loc ~name ~mutable_ ~modalities ~type_ =
     { pld_loc = loc
+    ; pld_modalities = Modality.to_ast_modalities_list ~loc modalities
     ; pld_name = name
     ; pld_type = type_
     ; pld_mutable = mutable_
@@ -42,10 +88,13 @@ module Label_declaration = struct
 end
 
 module Value_description = struct
-  let extract_modalities vd = [], vd
+  let extract_modalities vd =
+    Modality.of_ast_modalities_list vd.pval_modalities, { vd with pval_modalities = [] }
+  ;;
 
-  let create ~loc ~name ~type_ ~modalities:_ ~prim =
+  let create ~loc ~name ~type_ ~modalities ~prim =
     { pval_loc = loc
+    ; pval_modalities = Modality.to_ast_modalities_list ~loc modalities
     ; pval_name = name
     ; pval_type = type_
     ; pval_prim = prim
@@ -54,126 +103,100 @@ module Value_description = struct
   ;;
 end
 
-type mode_const_expression = string Location.loc
-type mode_expression = mode_const_expression list Location.loc
-type jkind_const_annotation = string Location.loc
+module Value_binding = struct
+  let extract_modes vb = vb.pvb_modes, { vb with pvb_modes = [] }
 
-type jkind_annotation =
-  | Default
-  | Abbreviation of jkind_const_annotation
-  | Mod of jkind_annotation * mode_expression
-  | With of jkind_annotation * core_type
-  | Kind_of of core_type
+  let create ~loc ~pat ~expr ~modes =
+    { pvb_pat = pat
+    ; pvb_expr = expr
+    ; pvb_modes = modes
+    ; pvb_attributes = []
+    ; pvb_loc = loc
+    }
+  ;;
+end
 
 module Pexp_function = struct
-  type function_param_desc =
+  type nonrec function_param_desc = function_param_desc =
     | Pparam_val of arg_label * expression option * pattern
-    | Pparam_newtype of string loc * jkind_annotation loc option
+    | Pparam_newtype of string loc * jkind_annotation option
 
-  type function_param =
+  type nonrec function_param = function_param =
     { pparam_loc : Location.t
     ; pparam_desc : function_param_desc
     }
 
-  type type_constraint =
-    | Pconstraint of core_type
-    | Pcoerce of core_type option * core_type
-
-  type function_constraint =
-    { mode_annotations : mode_expression
+  type nonrec function_constraint = function_constraint =
+    { mode_annotations : modes
     ; type_constraint : type_constraint
     }
 
-  type function_body =
+  type nonrec type_constraint = type_constraint =
+    | Pconstraint of core_type
+    | Pcoerce of core_type option * core_type
+
+  type nonrec function_body = function_body =
     | Pfunction_body of expression
     | Pfunction_cases of case list * Location.t * attributes
 
-  let to_parsetree ~params ~constraint_ ~body =
-    let body =
-      match body with
-      | Pfunction_body body -> body
-      | Pfunction_cases (cases, loc, pexp_attributes) ->
-        Ast_helper.Exp.function_ cases ~loc ~attrs:pexp_attributes
-    in
-    let body =
-      match constraint_ with
-      | None -> body
-      | Some { type_constraint = Pconstraint ty; _ } ->
-        let body_loc = { body.pexp_loc with loc_ghost = true } in
-        Ast_helper.Exp.constraint_ body ty ~loc:body_loc
-      | Some { type_constraint = Pcoerce (ty1, ty2); _ } ->
-        let body_loc = { body.pexp_loc with loc_ghost = true } in
-        Ast_helper.Exp.coerce body ty1 ty2 ~loc:body_loc
-    in
-    let fun_ =
-      ListLabels.fold_right params ~init:body ~f:(fun param body ->
-        let loc : Location.t =
-          { loc_start = param.pparam_loc.loc_start
-          ; loc_end = body.pexp_loc.loc_end
-          ; loc_ghost = true
-          }
-        in
-        match param.pparam_desc with
-        | Pparam_val (lbl, eo, pat) -> Ast_helper.Exp.fun_ lbl eo pat body ~loc
-        | Pparam_newtype (newtype, _) -> Ast_helper.Exp.newtype newtype body ~loc)
-    in
-    fun_.pexp_desc
-  ;;
+  let to_parsetree ~params ~constraint_ ~body = Pexp_function (params, constraint_, body)
 
-  let of_parsetree =
-    let body_of_parsetree body =
-      match body.pexp_desc with
-      | Pexp_function cases -> Pfunction_cases (cases, body.pexp_loc, body.pexp_attributes)
-      | _ -> Pfunction_body body
-    in
-    let finish ~rev_params ~constraint_ ~body =
-      let body = body_of_parsetree body in
-      match rev_params, constraint_, body with
-      | [], _, Pfunction_body _ -> None
-      | [], Some _, Pfunction_cases _ -> None
-      | rev_params, constraint_, body ->
-        let constraint_ : function_constraint option =
-          match constraint_ with
-          | None -> None
-          | Some type_constraint ->
-            Some { mode_annotations = { txt = []; loc = Location.none }; type_constraint }
-        in
-        Some (List.rev rev_params, constraint_, body)
-    in
-    let rec loop_expr_desc expr_desc ~rev_params ~containing_expr =
-      match expr_desc with
-      | Pexp_newtype (ty, body) ->
-        loop_expr
-          body
-          ~rev_params:
-            ({ pparam_loc = ty.loc; pparam_desc = Pparam_newtype (ty, None) }
-             :: rev_params)
-      | Pexp_fun (lbl, eo, pat, body) ->
-        loop_expr
-          body
-          ~rev_params:
-            ({ pparam_loc = pat.ppat_loc; pparam_desc = Pparam_val (lbl, eo, pat) }
-             :: rev_params)
-      | Pexp_constraint (body, ty) ->
-        finish ~rev_params ~constraint_:(Some (Pconstraint ty)) ~body
-      | _ ->
-        (match containing_expr with
-         | None -> None
-         | Some body -> finish ~rev_params ~constraint_:None ~body)
-    and loop_expr expr ~rev_params =
-      match expr.pexp_attributes with
-      | _ :: _ -> finish ~rev_params ~constraint_:None ~body:expr
-      | [] -> loop_expr_desc expr.pexp_desc ~rev_params ~containing_expr:(Some expr)
-    in
-    fun expr_desc ~loc ->
-      match expr_desc with
-      | Pexp_function cases -> Some ([], None, Pfunction_cases (cases, loc, []))
-      | _ -> loop_expr_desc expr_desc ~rev_params:[] ~containing_expr:None
+  (* The ignored [loc] argument is used in shim_upstream.ml. *)
+  let of_parsetree expr_desc ~loc:_ =
+    match expr_desc with
+    | Pexp_function (a, b, c) -> Some (a, b, c)
+    | _ -> None
   ;;
 end
 
+module Core_type_desc = struct
+  type t = core_type_desc =
+    | Ptyp_any of jkind_annotation option
+    | Ptyp_var of string * jkind_annotation option
+    | Ptyp_arrow of arg_label * core_type * core_type * Modes.t * Modes.t
+    | Ptyp_tuple of (string option * core_type) list
+    | Ptyp_unboxed_tuple of (string option * core_type) list
+    | Ptyp_constr of Longident.t loc * core_type list
+    | Ptyp_object of object_field list * closed_flag
+    | Ptyp_class of Longident.t loc * core_type list
+    | Ptyp_alias of core_type * string loc option * jkind_annotation option
+    | Ptyp_variant of row_field list * closed_flag * label list option
+    | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
+    | Ptyp_package of package_type
+    | Ptyp_extension of extension
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Pattern_desc = struct
+  type t = pattern_desc =
+    | Ppat_any
+    | Ppat_var of string loc
+    | Ppat_alias of pattern * string loc
+    | Ppat_constant of constant
+    | Ppat_interval of constant * constant
+    | Ppat_tuple of (string option * pattern) list * closed_flag
+    | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
+    | Ppat_construct of Longident.t loc * (string loc list * pattern) option
+    | Ppat_variant of label * pattern option
+    | Ppat_record of (Longident.t loc * pattern) list * closed_flag
+    | Ppat_array of mutable_flag * pattern list
+    | Ppat_or of pattern * pattern
+    | Ppat_constraint of pattern * core_type option * modes
+    | Ppat_type of Longident.t loc
+    | Ppat_lazy of pattern
+    | Ppat_unpack of string option loc
+    | Ppat_exception of pattern
+    | Ppat_extension of extension
+    | Ppat_open of Longident.t loc * pattern
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
 module Expression_desc = struct
-  type t =
+  type t = expression_desc =
     | Pexp_ident of Longident.t loc
     | Pexp_constant of constant
     | Pexp_let of rec_flag * value_binding list * expression
@@ -184,18 +207,19 @@ module Expression_desc = struct
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
-    | Pexp_tuple of expression list
+    | Pexp_tuple of (string option * expression) list
+    | Pexp_unboxed_tuple of (string option * expression) list
     | Pexp_construct of Longident.t loc * expression option
     | Pexp_variant of label * expression option
     | Pexp_record of (Longident.t loc * expression) list * expression option
     | Pexp_field of expression * Longident.t loc
     | Pexp_setfield of expression * Longident.t loc * expression
-    | Pexp_array of expression list
+    | Pexp_array of mutable_flag * expression list
     | Pexp_ifthenelse of expression * expression * expression option
     | Pexp_sequence of expression * expression
     | Pexp_while of expression * expression
     | Pexp_for of pattern * expression * expression * direction_flag * expression
-    | Pexp_constraint of expression * core_type
+    | Pexp_constraint of expression * core_type option * Modes.t
     | Pexp_coerce of expression * core_type option * core_type
     | Pexp_send of expression * label loc
     | Pexp_new of Longident.t loc
@@ -207,95 +231,162 @@ module Expression_desc = struct
     | Pexp_lazy of expression
     | Pexp_poly of expression * core_type option
     | Pexp_object of class_structure
-    | Pexp_newtype of string loc * expression
+    | Pexp_newtype of string loc * jkind_annotation option * expression
     | Pexp_pack of module_expr
     | Pexp_open of open_declaration * expression
     | Pexp_letop of letop
     | Pexp_extension of extension
     | Pexp_unreachable
+    | Pexp_stack of expression
+    | Pexp_comprehension of comprehension_expression
 
-  let to_parsetree : t -> expression_desc = function
-    | Pexp_function (x1, x2, x3) ->
-      Pexp_function.to_parsetree ~params:x1 ~constraint_:x2 ~body:x3
-    | Pexp_ident x -> Pexp_ident x
-    | Pexp_constant x -> Pexp_constant x
-    | Pexp_let (x1, x2, x3) -> Pexp_let (x1, x2, x3)
-    | Pexp_apply (x1, x2) -> Pexp_apply (x1, x2)
-    | Pexp_match (x1, x2) -> Pexp_match (x1, x2)
-    | Pexp_try (x1, x2) -> Pexp_try (x1, x2)
-    | Pexp_tuple x -> Pexp_tuple x
-    | Pexp_construct (x1, x2) -> Pexp_construct (x1, x2)
-    | Pexp_variant (x1, x2) -> Pexp_variant (x1, x2)
-    | Pexp_record (x1, x2) -> Pexp_record (x1, x2)
-    | Pexp_field (x1, x2) -> Pexp_field (x1, x2)
-    | Pexp_setfield (x1, x2, x3) -> Pexp_setfield (x1, x2, x3)
-    | Pexp_array x -> Pexp_array x
-    | Pexp_ifthenelse (x1, x2, x3) -> Pexp_ifthenelse (x1, x2, x3)
-    | Pexp_sequence (x1, x2) -> Pexp_sequence (x1, x2)
-    | Pexp_while (x1, x2) -> Pexp_while (x1, x2)
-    | Pexp_for (x1, x2, x3, x4, x5) -> Pexp_for (x1, x2, x3, x4, x5)
-    | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, x2)
-    | Pexp_coerce (x1, x2, x3) -> Pexp_coerce (x1, x2, x3)
-    | Pexp_send (x1, x2) -> Pexp_send (x1, x2)
-    | Pexp_new x -> Pexp_new x
-    | Pexp_setinstvar (x1, x2) -> Pexp_setinstvar (x1, x2)
-    | Pexp_override x -> Pexp_override x
-    | Pexp_letmodule (x1, x2, x3) -> Pexp_letmodule (x1, x2, x3)
-    | Pexp_letexception (x1, x2) -> Pexp_letexception (x1, x2)
-    | Pexp_assert x -> Pexp_assert x
-    | Pexp_lazy x -> Pexp_lazy x
-    | Pexp_poly (x1, x2) -> Pexp_poly (x1, x2)
-    | Pexp_object x -> Pexp_object x
-    | Pexp_newtype (x1, x2) -> Pexp_newtype (x1, x2)
-    | Pexp_pack x -> Pexp_pack x
-    | Pexp_open (x1, x2) -> Pexp_open (x1, x2)
-    | Pexp_letop x -> Pexp_letop x
-    | Pexp_extension x -> Pexp_extension x
-    | Pexp_unreachable -> Pexp_unreachable
-  ;;
+  (* The ignored [loc] argument is used in shim_upstream.ml. *)
+  let of_parsetree x ~loc:_ = x
+  let to_parsetree x = x
+end
 
-  let of_parsetree (expr_desc : expression_desc) ~loc : t =
-    match Pexp_function.of_parsetree expr_desc ~loc with
-    | Some (x1, x2, x3) -> Pexp_function (x1, x2, x3)
-    | None ->
-      (match expr_desc with
-       | Pexp_function _ | Pexp_fun _ ->
-         (* matched by above call to [of_parsetree] *)
-         assert false
-       | Pexp_ident x -> Pexp_ident x
-       | Pexp_constant x -> Pexp_constant x
-       | Pexp_let (x1, x2, x3) -> Pexp_let (x1, x2, x3)
-       | Pexp_apply (x1, x2) -> Pexp_apply (x1, x2)
-       | Pexp_match (x1, x2) -> Pexp_match (x1, x2)
-       | Pexp_try (x1, x2) -> Pexp_try (x1, x2)
-       | Pexp_tuple x -> Pexp_tuple x
-       | Pexp_construct (x1, x2) -> Pexp_construct (x1, x2)
-       | Pexp_variant (x1, x2) -> Pexp_variant (x1, x2)
-       | Pexp_record (x1, x2) -> Pexp_record (x1, x2)
-       | Pexp_field (x1, x2) -> Pexp_field (x1, x2)
-       | Pexp_setfield (x1, x2, x3) -> Pexp_setfield (x1, x2, x3)
-       | Pexp_array x -> Pexp_array x
-       | Pexp_ifthenelse (x1, x2, x3) -> Pexp_ifthenelse (x1, x2, x3)
-       | Pexp_sequence (x1, x2) -> Pexp_sequence (x1, x2)
-       | Pexp_while (x1, x2) -> Pexp_while (x1, x2)
-       | Pexp_for (x1, x2, x3, x4, x5) -> Pexp_for (x1, x2, x3, x4, x5)
-       | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, x2)
-       | Pexp_coerce (x1, x2, x3) -> Pexp_coerce (x1, x2, x3)
-       | Pexp_send (x1, x2) -> Pexp_send (x1, x2)
-       | Pexp_new x -> Pexp_new x
-       | Pexp_setinstvar (x1, x2) -> Pexp_setinstvar (x1, x2)
-       | Pexp_override x -> Pexp_override x
-       | Pexp_letmodule (x1, x2, x3) -> Pexp_letmodule (x1, x2, x3)
-       | Pexp_letexception (x1, x2) -> Pexp_letexception (x1, x2)
-       | Pexp_assert x -> Pexp_assert x
-       | Pexp_lazy x -> Pexp_lazy x
-       | Pexp_poly (x1, x2) -> Pexp_poly (x1, x2)
-       | Pexp_object x -> Pexp_object x
-       | Pexp_newtype (x1, x2) -> Pexp_newtype (x1, x2)
-       | Pexp_pack x -> Pexp_pack x
-       | Pexp_open (x1, x2) -> Pexp_open (x1, x2)
-       | Pexp_letop x -> Pexp_letop x
-       | Pexp_extension x -> Pexp_extension x
-       | Pexp_unreachable -> Pexp_unreachable)
-  ;;
+module Core_type = struct
+  type t = core_type =
+    { ptyp_desc : Core_type_desc.t
+    ; ptyp_loc : Location.t
+    ; ptyp_loc_stack : Location.t list
+    ; ptyp_attributes : attributes
+    }
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Signature_item_desc = struct
+  type t = signature_item_desc =
+    | Psig_value of value_description
+    | Psig_type of rec_flag * type_declaration list
+    | Psig_typesubst of type_declaration list
+    | Psig_typext of type_extension
+    | Psig_exception of type_exception
+    | Psig_module of module_declaration
+    | Psig_modsubst of module_substitution
+    | Psig_recmodule of module_declaration list
+    | Psig_modtype of module_type_declaration
+    | Psig_modtypesubst of module_type_declaration
+    | Psig_open of open_description
+    | Psig_include of include_description * modalities
+    | Psig_class of class_description list
+    | Psig_class_type of class_type_declaration list
+    | Psig_attribute of attribute
+    | Psig_extension of extension * attributes
+    | Psig_kind_abbrev of string loc * jkind_annotation
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+type nonrec jkind_annotation_desc = jkind_annotation_desc =
+  | Default
+  | Abbreviation of string
+  | Mod of jkind_annotation * Modes.t
+  | With of jkind_annotation * core_type
+  | Kind_of of core_type
+  | Product of jkind_annotation list
+
+type nonrec jkind_annotation = jkind_annotation =
+  { pjkind_loc : Location.t
+  ; pjkind_desc : jkind_annotation_desc
+  }
+
+module Type_declaration = struct
+  let extract_jkind_annotation (td : type_declaration) = td.ptype_jkind_annotation
+end
+
+module Constant = struct
+  type t = constant =
+    | Pconst_integer of string * char option
+    | Pconst_unboxed_integer of string * char
+    | Pconst_char of char
+    | Pconst_string of string * Location.t * string option
+    | Pconst_float of string * char option
+    | Pconst_unboxed_float of string * char option
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Include_infos = struct
+  type 'a t = 'a include_infos =
+    { pincl_kind : Include_kind.t
+    ; pincl_mod : 'a
+    ; pincl_loc : Location.t
+    ; pincl_attributes : attributes
+    }
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Signature = struct
+  type t = signature = { psg_items : signature_item list }
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Structure_item_desc = struct
+  type t = structure_item_desc =
+    | Pstr_eval of expression * attributes
+    | Pstr_value of rec_flag * value_binding list
+    | Pstr_primitive of value_description
+    | Pstr_type of rec_flag * type_declaration list
+    | Pstr_typext of type_extension
+    | Pstr_exception of type_exception
+    | Pstr_module of module_binding
+    | Pstr_recmodule of module_binding list
+    | Pstr_modtype of module_type_declaration
+    | Pstr_open of open_declaration
+    | Pstr_class of class_declaration list
+    | Pstr_class_type of class_type_declaration list
+    | Pstr_include of include_declaration
+    | Pstr_attribute of attribute
+    | Pstr_extension of extension * attributes
+    | Pstr_kind_abbrev of string loc * jkind_annotation
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Module_type_desc = struct
+  type t = module_type_desc =
+    | Pmty_ident of Longident.t loc
+    | Pmty_signature of signature
+    | Pmty_functor of functor_parameter * module_type
+    | Pmty_with of module_type * with_constraint list
+    | Pmty_typeof of module_expr
+    | Pmty_extension of extension
+    | Pmty_alias of Longident.t loc
+    | Pmty_strengthen of module_type * Longident.t loc
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Module_expr_desc = struct
+  type t = module_expr_desc =
+    | Pmod_ident of Longident.t loc
+    | Pmod_structure of structure
+    | Pmod_functor of functor_parameter * module_expr
+    | Pmod_apply of module_expr * module_expr
+    | Pmod_constraint of module_expr * module_type
+    | Pmod_unpack of expression
+    | Pmod_extension of extension
+    | Pmod_instance of module_instance
+
+  let of_parsetree x = x
+  let to_parsetree x = x
+end
+
+module Ast_traverse = struct
+  class virtual map = Ppxlib_ast.Ast.map
+  class virtual iter = Ppxlib_ast.Ast.iter
+  class virtual ['acc] fold = ['acc] Ppxlib_ast.Ast.fold
+  class virtual ['acc] fold_map = ['acc] Ppxlib_ast.Ast.fold_map
+  class virtual ['ctx] map_with_context = ['ctx] Ppxlib_ast.Ast.map_with_context
 end

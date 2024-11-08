@@ -5,10 +5,6 @@ open Stdppx
 include Ast_builder_intf
 include Shim
 
-let core_type ptyp_desc ~loc:ptyp_loc =
-  { ptyp_desc; ptyp_loc; ptyp_attributes = []; ptyp_loc_stack = [] }
-;;
-
 module Default = struct
   include Shim
 
@@ -16,30 +12,24 @@ module Default = struct
   type function_constraint = Shim.Pexp_function.function_constraint
   type function_body = Shim.Pexp_function.function_body
 
-  let mark_type_with_mode_expr modes ty =
-    let attr = Jane_syntax.Mode_expr.attr_of modes in
-    match attr with
-    | None -> ty
-    | Some attr -> { ty with ptyp_attributes = attr :: ty.ptyp_attributes }
+  let mktyp ~loc ?(attrs = []) ptyp_desc =
+    { ptyp_loc_stack = []; ptyp_attributes = attrs; ptyp_loc = loc; ptyp_desc }
   ;;
 
-  let mode_expr_of_modes ~loc modes =
-    List.fold_right modes ~init:Jane_syntax.Mode_expr.empty ~f:(fun (Mode name) acc ->
-      let mode = Jane_syntax.Mode_expr.Const.mk name loc in
-      Jane_syntax.Mode_expr.concat { txt = [ mode ]; loc } acc)
+  let mkexp ~loc ?(attrs = []) pexp_desc =
+    { pexp_loc_stack = []; pexp_attributes = attrs; pexp_loc = loc; pexp_desc }
   ;;
 
-  let mark_type_with_modes ~loc mode ty =
-    mark_type_with_mode_expr (mode_expr_of_modes ~loc mode) ty
+  let mkpat ~loc ?(attrs = []) ppat_desc =
+    { ppat_loc_stack = []; ppat_attributes = attrs; ppat_loc = loc; ppat_desc }
   ;;
 
   let ptyp_arrow ~loc { arg_label; arg_modes; arg_type } { result_modes; result_type } =
-    core_type
-      ~loc
-      (Ptyp_arrow
-         ( arg_label
-         , mark_type_with_modes ~loc arg_modes arg_type
-         , mark_type_with_modes ~loc result_modes result_type ))
+    let ptyp_desc =
+      Ptyp_arrow (arg_label, arg_type, result_type, arg_modes, result_modes)
+      |> Shim.Core_type_desc.to_parsetree
+    in
+    mktyp ~loc ptyp_desc
   ;;
 
   let tarrow ~loc args result =
@@ -49,16 +39,11 @@ module Default = struct
         (Invalid_argument
            "tarrow: Can't construct a 0-ary arrow, argument list must be nonempty")
     | _ :: _ ->
-      let result_mode_and_type =
-        let { result_modes; result_type } = result in
-        mark_type_with_modes ~loc result_modes result_type
+      let { result_type; _ } =
+        List.fold_right args ~init:result ~f:(fun arg result ->
+          { result_type = ptyp_arrow ~loc arg result; result_modes = [] })
       in
-      List.fold_right
-        args
-        ~init:result_mode_and_type
-        ~f:(fun { arg_label; arg_modes; arg_type } arrow_type ->
-          let arg_type = mark_type_with_modes ~loc arg_modes arg_type in
-          core_type ~loc (Ptyp_arrow (arg_label, arg_type, arrow_type)))
+      result_type
   ;;
 
   let tarrow_maybe ~loc args result_type =
@@ -67,15 +52,17 @@ module Default = struct
     | _ :: _ -> tarrow ~loc args { result_modes = []; result_type }
   ;;
 
-  let get_modes ty =
-    let modes, ptyp_attributes = Jane_syntax.Mode_expr.of_attrs ty.ptyp_attributes in
-    let modes =
-      List.map
-        (modes.txt : Jane_syntax.Mode_expr.Const.t list :> _ Location.loc list)
-        ~f:(fun { txt = name; _ } -> Mode name)
-    in
-    modes, { ty with ptyp_attributes }
+  let pexp_constraint ~loc a b c =
+    let pexp_desc = Pexp_constraint (a, b, c) |> Shim.Expression_desc.to_parsetree in
+    mkexp ~loc pexp_desc
   ;;
+
+  let ppat_constraint ~loc a b c =
+    let ppat_desc = Ppat_constraint (a, b, c) |> Shim.Pattern_desc.to_parsetree in
+    mkpat ~loc ppat_desc
+  ;;
+
+  let value_binding = Shim.Value_binding.create
 
   let pcstr_tuple ~loc modalities_tys =
     Pcstr_tuple
@@ -89,12 +76,30 @@ module Default = struct
          Shim.Pcstr_tuple_arg.create ~loc:type_.ptyp_loc ~modalities:[] ~type_))
   ;;
 
+  let psig_include ~loc ~modalities a =
+    let psig_desc =
+      Psig_include (a, modalities) |> Shim.Signature_item_desc.to_parsetree
+    in
+    { psig_loc = loc; psig_desc }
+  ;;
+
+  let signature ~loc:_ psg_items = Shim.Signature.to_parsetree { psg_items }
+
+  let pmty_signature ~loc signature =
+    { pmty_desc = Pmty_signature signature; pmty_loc = loc; pmty_attributes = [] }
+  ;;
+
   let get_tuple_field_modalities = Shim.Pcstr_tuple_arg.extract_modalities
   let get_label_declaration_modalities = Shim.Label_declaration.extract_modalities
   let label_declaration = Shim.Label_declaration.create
   let get_value_description_modalities = Shim.Value_description.extract_modalities
   let value_description = Shim.Value_description.create
   let pcstr_tuple_arg = Shim.Pcstr_tuple_arg.create
+
+  let include_infos ~loc ?(attrs = []) ~kind x =
+    Include_infos.to_parsetree
+      { pincl_kind = kind; pincl_mod = x; pincl_loc = loc; pincl_attributes = attrs }
+  ;;
 
   let pexp_function ~loc ~attrs ~params ~constraint_ ~body =
     { pexp_desc = Shim.Pexp_function.to_parsetree ~params ~constraint_ ~body
@@ -118,9 +123,7 @@ module Default = struct
   ;;
 
   let function_constraint type_constraint : function_constraint =
-    { type_constraint = Pconstraint type_constraint
-    ; mode_annotations = { loc = Location.none; txt = [] }
-    }
+    { type_constraint = Pconstraint type_constraint; mode_annotations = [] }
   ;;
 
   let maybe_constrain body return_constraint ~loc =
@@ -214,22 +217,84 @@ module Default = struct
     ;;
   end
 
-  let lexp_constant ~loc c =
-    Jane_syntax.Expression.expr_of ~loc ~attrs:[] (Jexp_layout (Lexp_constant c))
+  let ptyp_unboxed_tuple ~loc a =
+    let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_unboxed_tuple a) in
+    { ptyp_loc_stack = []; ptyp_attributes = []; ptyp_loc = loc; ptyp_desc }
   ;;
 
-  let lpat_constant ~loc c =
-    Jane_syntax.Pattern.pat_of ~loc ~attrs:[] (Jpat_layout (Lpat_constant c))
+  let pexp_unboxed_tuple ~loc a =
+    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_unboxed_tuple a) in
+    mkexp ~loc pexp_desc
   ;;
 
-  let eint64_u ~loc i = lexp_constant ~loc (Integer (Int64.to_string i, 'L'))
-  let eint32_u ~loc i = lexp_constant ~loc (Integer (Int32.to_string i, 'l'))
-  let enativeint_u ~loc i = lexp_constant ~loc (Integer (Nativeint.to_string i, 'n'))
-  let efloat_u ~loc f = lexp_constant ~loc (Float (Float.to_string f, None))
-  let pint64_u ~loc i = lpat_constant ~loc (Integer (Int64.to_string i, 'L'))
-  let pint32_u ~loc i = lpat_constant ~loc (Integer (Int32.to_string i, 'l'))
-  let pnativeint_u ~loc i = lpat_constant ~loc (Integer (Nativeint.to_string i, 'n'))
-  let pfloat_u ~loc f = lpat_constant ~loc (Float (Float.to_string f, None))
+  let ppat_unboxed_tuple ~loc a closed =
+    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_unboxed_tuple (a, closed)) in
+    mkpat ~loc ppat_desc
+  ;;
+
+  let exp_constant ~loc c =
+    let c = Shim.Constant.to_parsetree c in
+    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_constant c) in
+    mkexp ~loc pexp_desc
+  ;;
+
+  let pat_constant ~loc c =
+    let c = Shim.Constant.to_parsetree c in
+    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_constant c) in
+    mkpat ~loc ppat_desc
+  ;;
+
+  let exp_unboxed_int_constant ~loc str suffix =
+    exp_constant ~loc (Pconst_unboxed_integer (str, suffix))
+  ;;
+
+  let pat_unboxed_int_constant ~loc str suffix =
+    pat_constant ~loc (Pconst_unboxed_integer (str, suffix))
+  ;;
+
+  let eint64_u ~loc i = exp_unboxed_int_constant ~loc (Int64.to_string i) 'L'
+  let eint32_u ~loc i = exp_unboxed_int_constant ~loc (Int32.to_string i) 'l'
+  let enativeint_u ~loc i = exp_unboxed_int_constant ~loc (Nativeint.to_string i) 'n'
+  let efloat_u ~loc f = exp_constant ~loc (Pconst_unboxed_float (f, None))
+  let pint64_u ~loc i = pat_unboxed_int_constant ~loc (Int64.to_string i) 'L'
+  let pint32_u ~loc i = pat_unboxed_int_constant ~loc (Int32.to_string i) 'l'
+  let pnativeint_u ~loc i = pat_unboxed_int_constant ~loc (Nativeint.to_string i) 'n'
+  let pfloat_u ~loc f = pat_constant ~loc (Pconst_unboxed_float (f, None))
+
+  let ptyp_tuple ~loc ?attrs a =
+    let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_tuple a) in
+    mktyp ?attrs ~loc ptyp_desc
+  ;;
+
+  let pexp_tuple ~loc ?attrs a =
+    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_tuple a) in
+    mkexp ?attrs ~loc pexp_desc
+  ;;
+
+  let ppat_tuple ~loc ?attrs a closed =
+    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_tuple (a, closed)) in
+    mkpat ?attrs ~loc ppat_desc
+  ;;
+
+  let ptyp_poly ~loc ?attrs a b =
+    let desc = Shim.Core_type_desc.to_parsetree (Ptyp_poly (a, b)) in
+    mktyp ?attrs ~loc desc
+  ;;
+
+  let pexp_newtype ~loc ?attrs a b c =
+    let desc = Shim.Expression_desc.to_parsetree (Pexp_newtype (a, b, c)) in
+    mkexp ?attrs ~loc desc
+  ;;
+
+  let ppat_array ~loc ?attrs a b =
+    let desc = Shim.Pattern_desc.to_parsetree (Ppat_array (a, b)) in
+    mkpat ?attrs ~loc desc
+  ;;
+
+  let pexp_array ~loc ?attrs a b =
+    let desc = Shim.Expression_desc.to_parsetree (Pexp_array (a, b)) in
+    mkexp ?attrs ~loc desc
+  ;;
 end
 
 module Make (Loc : sig
@@ -242,6 +307,13 @@ struct
   let ptyp_arrow arg res : core_type = ptyp_arrow ~loc arg res
   let tarrow args res : core_type = tarrow ~loc args res
   let tarrow_maybe args res : core_type = tarrow_maybe ~loc args res
+  let pexp_constraint a b c : expression = pexp_constraint ~loc a b c
+  let ppat_constraint a b c : pattern = ppat_constraint ~loc a b c
+
+  let value_binding ~pat ~expr ~modes : value_binding =
+    value_binding ~loc ~pat ~expr ~modes
+  ;;
+
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
 
   let label_declaration ~name ~mutable_ ~modalities ~type_ : label_declaration =
@@ -255,6 +327,10 @@ struct
   let pcstr_tuple_arg ~modalities ~type_ : Pcstr_tuple_arg.t =
     pcstr_tuple_arg ~loc ~modalities ~type_
   ;;
+
+  let include_infos ?attrs ~kind x = include_infos ~loc ?attrs ~kind x
+  let psig_include ~modalities a : signature_item = psig_include ~loc ~modalities a
+  let signature a : signature = signature ~loc a
 
   module Latest = struct
     let pexp_function ?attrs a b c : expression = Latest.pexp_function ~loc ?attrs a b c
@@ -275,6 +351,9 @@ struct
     add_fun_params ~loc ?attrs ?return_constraint a b
   ;;
 
+  let ptyp_unboxed_tuple a : core_type = ptyp_unboxed_tuple ~loc a
+  let pexp_unboxed_tuple a : expression = pexp_unboxed_tuple ~loc a
+  let ppat_unboxed_tuple a b : pattern = ppat_unboxed_tuple ~loc a b
   let eint64_u c : expression = eint64_u ~loc c
   let eint32_u c : expression = eint32_u ~loc c
   let enativeint_u c : expression = enativeint_u ~loc c
@@ -283,6 +362,14 @@ struct
   let pint32_u c : pattern = pint32_u ~loc c
   let pnativeint_u c : pattern = pnativeint_u ~loc c
   let pfloat_u c : pattern = pfloat_u ~loc c
+  let ptyp_tuple ?attrs a : core_type = ptyp_tuple ~loc ?attrs a
+  let pexp_tuple ?attrs a : expression = pexp_tuple ~loc ?attrs a
+  let ppat_tuple ?attrs a b : pattern = ppat_tuple ~loc ?attrs a b
+  let pmty_signature a : module_type = pmty_signature ~loc a
+  let ptyp_poly ?attrs a b : core_type = ptyp_poly ~loc ?attrs a b
+  let pexp_newtype ?attrs a b c : expression = pexp_newtype ~loc ?attrs a b c
+  let pexp_array ?attrs a b : expression = pexp_array ~loc ?attrs a b
+  let ppat_array ?attrs a b : pattern = ppat_array ~loc ?attrs a b
 end
 
 let make loc : (module S_with_implicit_loc) =
