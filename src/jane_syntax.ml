@@ -352,7 +352,7 @@ end
 
 module Jkinds_pprint = struct
   let const_jkind fmt cl =
-    Format.pp_print_string fmt (Stringable_const_jkind.to_string cl)
+    Format_doc.fprintf fmt "%s" (Stringable_const_jkind.to_string cl)
   ;;
 
   let jkind_annotation fmt ann = const_jkind fmt ann.txt
@@ -394,9 +394,9 @@ end = struct
              expecting %i but got this list:@;\
              %a"
             n
-            (Format.pp_print_list
-               (Format.pp_print_option
-                  ~none:(fun ppf () -> Format.fprintf ppf "None")
+            (Format_doc.pp_print_list
+               (Format_doc.pp_print_option
+                  ~none:(fun ppf () -> Format_doc.fprintf ppf "None")
                   Jkinds_pprint.jkind_annotation))
             jkinds
       ;;
@@ -1590,9 +1590,9 @@ module Layouts = struct
         Location.errorf
           ~loc
           "Layout extension does not understand these attribute names:@;[%a]"
-          (Format.pp_print_list
-             ~pp_sep:(fun ppf () -> Format.fprintf ppf ";@ ")
-             Format.pp_print_text)
+          (Format_doc.pp_print_list
+             ~pp_sep:(fun ppf () -> Format_doc.fprintf ppf ";@ ")
+             Format_doc.pp_print_text)
           names
       | No_integer_suffix ->
         Location.errorf

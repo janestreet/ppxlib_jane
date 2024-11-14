@@ -406,8 +406,8 @@ module Layouts : sig
         * Parsetree.core_type option
 
   module Pprint : sig
-    val const_jkind : Format.formatter -> Jane_asttypes.const_jkind -> unit
-    val jkind_annotation : Format.formatter -> Jane_asttypes.jkind_annotation -> unit
+    val const_jkind : Format_doc.formatter -> Jane_asttypes.const_jkind -> unit
+    val jkind_annotation : Format_doc.formatter -> Jane_asttypes.jkind_annotation -> unit
   end
 
   val expr_of : loc:Location.t -> expression -> Parsetree.expression

@@ -37,16 +37,20 @@ module Printast = struct
      so can be ad-hoc.
   *)
   let payload _ fmt (x : Parsetree.payload) =
-    match x with
-    | PStr x -> Pprintast.structure fmt x
-    | PTyp x -> Pprintast.core_type fmt x
-    | PSig x -> Pprintast.signature fmt x
-    | PPat (x, None) -> Pprintast.pattern fmt x
-    | PPat (x, Some e) ->
-      Pprintast.pattern fmt x;
-      Format.pp_print_string fmt " when ";
-      Pprintast.expression fmt e
+    Format_doc.deprecated_printer (fun fmt ->
+      match (x : Parsetree.payload) with
+      | PStr x -> Pprintast.structure fmt x
+      | PTyp x -> Pprintast.core_type fmt x
+      | PSig x -> Pprintast.signature fmt x
+      | PPat (x, None) -> Pprintast.pattern fmt x
+      | PPat (x, Some e) ->
+        Pprintast.pattern fmt x;
+        Format.pp_print_string fmt " when ";
+        Pprintast.expression fmt e)
+      fmt
   ;;
 
-  let expression _ fmt x = Astlib.Pprintast.expression fmt x
+  let expression _ fmt x =
+    Format_doc.deprecated_printer
+      (fun fmt -> Astlib.Pprintast.expression fmt x) fmt
 end

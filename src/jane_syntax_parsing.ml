@@ -182,7 +182,7 @@ module Embedding_syntax = struct
       | Extension_node -> "%"
       | Attribute -> "@"
     in
-    Format.fprintf ppf "[%s%s]" sigil name
+    Format_doc.fprintf ppf "[%s%s]" sigil name
   ;;
 end
 
@@ -274,12 +274,12 @@ module Embedded_name : sig
 
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)
-  val pp_quoted_name : Format.formatter -> t -> unit
+  val pp_quoted_name : Format_doc.formatter -> t -> unit
 
   (** Print out an empty extension node or attribute with a Jane-syntax name,
       accompanied by an indefinite article; for use in error messages.  Not
       exposed. *)
-  val pp_a_term : Format.formatter -> Embedding_syntax.t * t -> unit
+  val pp_a_term : Format_doc.formatter -> Embedding_syntax.t * t -> unit
 end = struct
   (** The three parameters that control how we encode Jane-syntax extension node
       names.  When updating these, update comments that refer to them by their
@@ -336,10 +336,10 @@ end = struct
     | _ :: _ | [] -> None
   ;;
 
-  let pp_quoted_name ppf t = Format.fprintf ppf "\"%s\"" (to_string t)
+  let pp_quoted_name ppf t = Format_doc.fprintf ppf "\"%s\"" (to_string t)
 
   let pp_a_term ppf (esyn, t) =
-    Format.fprintf ppf "%s %a" article Embedding_syntax.pp (esyn, to_string t)
+    Format_doc.fprintf ppf "%s %a" article Embedding_syntax.pp (esyn, to_string t)
   ;;
 end
 
