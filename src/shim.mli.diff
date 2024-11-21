@@ -21,54 +21,169 @@
 ---
 >   type t = core_type
 113c108
-< type nonrec jkind_const_annotation = jkind_const_annotation
+< type nonrec jkind_annotation_desc = jkind_annotation_desc =
 ---
-> type jkind_const_annotation = string Location.loc
-115c110
+> type jkind_annotation_desc =
+121c116
 < type nonrec jkind_annotation = jkind_annotation =
 ---
-> type jkind_annotation =
-125c120
+> and jkind_annotation =
+131c126
+<   type t = constant =
+---
+>   type t =
+145c140
 <   type nonrec function_param_desc = function_param_desc =
 ---
 >   type function_param_desc =
-129c124
+149c144
 <   type nonrec function_param = function_param =
 ---
 >   type function_param =
-134c129
+154c149
 <   type nonrec type_constraint = type_constraint =
 ---
 >   type type_constraint =
-138c133
+158c153
 <   type nonrec function_constraint = function_constraint =
 ---
 >   type function_constraint =
-143c138
+163c158
 <   type nonrec function_body = function_body =
 ---
 >   type function_body =
-160c155
+180c175
 <   type t = core_type_desc =
 ---
 >   type t =
-180c175
+200c195
 <   type t = core_type =
 ---
 >   type t =
-192c187
+212c207
 <   type t = pattern_desc =
 ---
 >   type t =
-218c213
+238c233,240
 <   type t = expression_desc =
 ---
+>
+>   type comprehension_expression = private
+>     | Pcomp_list_comprehension of unit
+>     | Pcomp_array_comprehension of unit
+> 
 >   type t =
-266c261
+287c289
 <   type 'a t = 'a include_infos =
 ---
 >   type 'a t =
-278c273
+299c301
 <   type t = signature_item_desc =
 ---
 >   type t =
+323c325
+<   type t = signature = { psg_items : signature_item list }
+---
+>   type t = { psg_items : signature_item list }
+330c332
+<   type t = structure_item_desc =
+---
+>   type t =
+353c355
+<   type t = module_type_desc =
+---
+>   type t =
+368c370,375
+<   type t = module_expr_desc =
+---
+>
+>   type module_instance = private Module_instance
+> 
+>   type t =
+383,387c390,469
+<   class virtual map : Ppxlib_ast.Ast.map
+<   class virtual iter : Ppxlib_ast.Ast.iter
+<   class virtual ['acc] fold : ['acc] Ppxlib_ast.Ast.fold
+<   class virtual ['acc] fold_map : ['acc] Ppxlib_ast.Ast.fold_map
+<   class virtual ['ctx] map_with_context : ['ctx] Ppxlib_ast.Ast.map_with_context
+---
+>   module Jane_street_extensions0 (T : sig
+>       type 'a t
+>     end) : sig
+>     class type t = object
+>       method jkind_annotation : jkind_annotation T.t
+>       method jkind_annotation_desc : jkind_annotation_desc T.t
+>       method function_body : Pexp_function.function_body T.t
+>       method function_param : Pexp_function.function_param T.t
+>       method function_param_desc : Pexp_function.function_param_desc T.t
+>       method function_constraint : Pexp_function.function_constraint T.t
+>       method type_constraint : Pexp_function.type_constraint T.t
+>       method modes : Modes.t T.t
+>       method mode : Mode.t T.t
+>       method signature_items : signature_item list T.t
+>     end
+>   end
+> 
+>   module Jane_street_extensions1 (T : sig
+>       type ('a, 'b) t
+>     end) : sig
+>     class type ['ctx] t = object
+>       method jkind_annotation : ('ctx, jkind_annotation) T.t
+>       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
+>       method function_body : ('ctx, Pexp_function.function_body) T.t
+>       method function_param : ('ctx, Pexp_function.function_param) T.t
+>       method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
+>       method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
+>       method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
+>       method modes : ('ctx, Modes.t) T.t
+>       method mode : ('ctx, Mode.t) T.t
+>       method signature_items : ('ctx, signature_item list) T.t
+>     end
+>   end
+> 
+>   module Ts : sig
+>     module Map : sig
+>       type 'a t = 'a Ppxlib_traverse_builtins.T.map
+>     end
+> 
+>     module Iter : sig
+>       type 'a t = 'a Ppxlib_traverse_builtins.T.iter
+>     end
+> 
+>     module Fold : sig
+>       type ('a, 'b) t = ('b, 'a) Ppxlib_traverse_builtins.T.fold
+>     end
+> 
+>     module Fold_map : sig
+>       type ('a, 'b) t = ('b, 'a) Ppxlib_traverse_builtins.T.fold_map
+>     end
+> 
+>     module Map_with_context : sig
+>       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
+>     end
+>   end
+> 
+>   class virtual map : object
+>     inherit Ppxlib_ast.Ast.map
+>     inherit Jane_street_extensions0(Ts.Map).t
+>   end
+> 
+>   class virtual iter : object
+>     inherit Ppxlib_ast.Ast.iter
+>     inherit Jane_street_extensions0(Ts.Iter).t
+>   end
+> 
+>   class virtual ['ctx] fold : object
+>     inherit ['ctx] Ppxlib_ast.Ast.fold
+>     inherit ['ctx] Jane_street_extensions1(Ts.Fold).t
+>   end
+> 
+>   class virtual ['ctx] fold_map : object
+>     inherit ['ctx] Ppxlib_ast.Ast.fold_map
+>     inherit ['ctx] Jane_street_extensions1(Ts.Fold_map).t
+>   end
+> 
+>   class virtual ['ctx] map_with_context : object
+>     inherit ['ctx] Ppxlib_ast.Ast.map_with_context
+>     inherit ['ctx] Jane_street_extensions1(Ts.Map_with_context).t
+>   end

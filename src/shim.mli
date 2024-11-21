@@ -105,21 +105,41 @@ module Value_binding : sig
     -> value_binding
 end
 
-type jkind_const_annotation = string Location.loc
-
-type jkind_annotation =
+type jkind_annotation_desc =
   | Default
-  | Abbreviation of jkind_const_annotation
+  | Abbreviation of string
   | Mod of jkind_annotation * Modes.t
   | With of jkind_annotation * core_type
   | Kind_of of core_type
   | Product of jkind_annotation list
 
+and jkind_annotation =
+  { pjkind_loc : Location.t
+  ; pjkind_desc : jkind_annotation_desc
+  }
+
+module Type_declaration : sig
+  val extract_jkind_annotation : type_declaration -> jkind_annotation option
+end
+
+module Constant : sig
+  type t =
+    | Pconst_integer of string * char option
+    | Pconst_unboxed_integer of string * char
+    | Pconst_char of char
+    | Pconst_string of string * Location.t * string option
+    | Pconst_float of string * char option
+    | Pconst_unboxed_float of string * char option
+
+  val of_parsetree : constant -> t
+  val to_parsetree : t -> constant
+end
+
 (** Match and construct [Pexp_function], as in the OCaml parsetree at or after 5.2. *)
 module Pexp_function : sig
   type function_param_desc =
     | Pparam_val of arg_label * expression option * pattern
-    | Pparam_newtype of string loc * jkind_annotation loc option
+    | Pparam_newtype of string loc * jkind_annotation option
 
   type function_param =
     { pparam_loc : Location.t
@@ -153,17 +173,17 @@ end
 
 module Core_type_desc : sig
   type t =
-    | Ptyp_any
-    | Ptyp_var of string
+    | Ptyp_any of jkind_annotation option
+    | Ptyp_var of string * jkind_annotation option
     | Ptyp_arrow of arg_label * core_type * core_type * Modes.t * Modes.t
-    | Ptyp_tuple of core_type list
+    | Ptyp_tuple of (string option * core_type) list
     | Ptyp_unboxed_tuple of (string option * core_type) list
     | Ptyp_constr of Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
     | Ptyp_class of Longident.t loc * core_type list
-    | Ptyp_alias of core_type * string loc
+    | Ptyp_alias of core_type * string loc option * jkind_annotation option
     | Ptyp_variant of row_field list * closed_flag * label list option
-    | Ptyp_poly of string loc list * core_type
+    | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
     | Ptyp_extension of extension
 
@@ -190,12 +210,12 @@ module Pattern_desc : sig
     | Ppat_alias of pattern * string loc
     | Ppat_constant of constant
     | Ppat_interval of constant * constant
-    | Ppat_tuple of pattern list
+    | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
     | Ppat_construct of Longident.t loc * (string loc list * pattern) option
     | Ppat_variant of label * pattern option
     | Ppat_record of (Longident.t loc * pattern) list * closed_flag
-    | Ppat_array of pattern list
+    | Ppat_array of mutable_flag * pattern list
     | Ppat_or of pattern * pattern
     | Ppat_constraint of pattern * core_type option * Modes.t
     | Ppat_type of Longident.t loc
@@ -210,6 +230,10 @@ module Pattern_desc : sig
 end
 
 module Expression_desc : sig
+  type comprehension_expression = private
+    | Pcomp_list_comprehension of unit
+    | Pcomp_array_comprehension of unit
+
   type t =
     | Pexp_ident of Longident.t loc
     | Pexp_constant of constant
@@ -221,14 +245,14 @@ module Expression_desc : sig
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
-    | Pexp_tuple of expression list
+    | Pexp_tuple of (string option * expression) list
     | Pexp_unboxed_tuple of (string option * expression) list
     | Pexp_construct of Longident.t loc * expression option
     | Pexp_variant of label * expression option
     | Pexp_record of (Longident.t loc * expression) list * expression option
     | Pexp_field of expression * Longident.t loc
     | Pexp_setfield of expression * Longident.t loc * expression
-    | Pexp_array of expression list
+    | Pexp_array of mutable_flag * expression list
     | Pexp_ifthenelse of expression * expression * expression option
     | Pexp_sequence of expression * expression
     | Pexp_while of expression * expression
@@ -245,13 +269,14 @@ module Expression_desc : sig
     | Pexp_lazy of expression
     | Pexp_poly of expression * core_type option
     | Pexp_object of class_structure
-    | Pexp_newtype of string loc * expression
+    | Pexp_newtype of string loc * jkind_annotation option * expression
     | Pexp_pack of module_expr
     | Pexp_open of open_declaration * expression
     | Pexp_letop of letop
     | Pexp_extension of extension
     | Pexp_unreachable
     | Pexp_stack of expression
+    | Pexp_comprehension of comprehension_expression
 
   val of_parsetree : expression_desc -> loc:Location.t -> t
   val to_parsetree : t -> expression_desc
@@ -272,30 +297,168 @@ end
 module Signature_item_desc : sig
   type t =
     | Psig_value of value_description
-    (** - [val x: T]
-            - [external x: T = "s1" ... "sn"]
-         *)
     | Psig_type of rec_flag * type_declaration list
-    (** [type t1 = ... and ... and tn  = ...] *)
     | Psig_typesubst of type_declaration list
-    (** [type t1 := ... and ... and tn := ...]  *)
-    | Psig_typext of type_extension (** [type t1 += ...] *)
-    | Psig_exception of type_exception (** [exception C of T] *)
-    | Psig_module of module_declaration (** [module X = M] and [module X : MT] *)
-    | Psig_modsubst of module_substitution (** [module X := M] *)
+    | Psig_typext of type_extension
+    | Psig_exception of type_exception
+    | Psig_module of module_declaration
+    | Psig_modsubst of module_substitution
     | Psig_recmodule of module_declaration list
-    (** [module rec X1 : MT1 and ... and Xn : MTn] *)
     | Psig_modtype of module_type_declaration
-    (** [module type S = MT] and [module type S] *)
-    | Psig_modtypesubst of module_type_declaration (** [module type S :=  ...]  *)
-    | Psig_open of open_description (** [open X] *)
-    | Psig_include of include_description * Modalities.t (** [include MT] *)
-    | Psig_class of class_description list (** [class c1 : ... and ... and cn : ...] *)
+    | Psig_modtypesubst of module_type_declaration
+    | Psig_open of open_description
+    | Psig_include of include_description * Modalities.t
+    | Psig_class of class_description list
     | Psig_class_type of class_type_declaration list
-    (** [class type ct1 = ... and ... and ctn = ...] *)
-    | Psig_attribute of attribute (** [[\@\@\@id]] *)
-    | Psig_extension of extension * attributes (** [[%%id]] *)
+    | Psig_attribute of attribute
+    | Psig_extension of extension * attributes
+    | Psig_kind_abbrev of string loc * jkind_annotation
 
   val of_parsetree : signature_item_desc -> t
   val to_parsetree : t -> signature_item_desc
+end
+
+module Signature : sig
+  type t = { psg_items : signature_item list }
+
+  val of_parsetree : signature -> t
+  val to_parsetree : t -> signature
+end
+
+module Structure_item_desc : sig
+  type t =
+    | Pstr_eval of expression * attributes
+    | Pstr_value of rec_flag * value_binding list
+    | Pstr_primitive of value_description
+    | Pstr_type of rec_flag * type_declaration list
+    | Pstr_typext of type_extension
+    | Pstr_exception of type_exception
+    | Pstr_module of module_binding
+    | Pstr_recmodule of module_binding list
+    | Pstr_modtype of module_type_declaration
+    | Pstr_open of open_declaration
+    | Pstr_class of class_declaration list
+    | Pstr_class_type of class_type_declaration list
+    | Pstr_include of include_declaration
+    | Pstr_attribute of attribute
+    | Pstr_extension of extension * attributes
+    | Pstr_kind_abbrev of string loc * jkind_annotation
+
+  val of_parsetree : structure_item_desc -> t
+  val to_parsetree : t -> structure_item_desc
+end
+
+module Module_type_desc : sig
+  type t =
+    | Pmty_ident of Longident.t loc
+    | Pmty_signature of signature
+    | Pmty_functor of functor_parameter * module_type
+    | Pmty_with of module_type * with_constraint list
+    | Pmty_typeof of module_expr
+    | Pmty_extension of extension
+    | Pmty_alias of Longident.t loc
+    | Pmty_strengthen of module_type * Longident.t loc
+
+  val of_parsetree : module_type_desc -> t
+  val to_parsetree : t -> module_type_desc
+end
+
+module Module_expr_desc : sig
+  type module_instance = private Module_instance
+
+  type t =
+    | Pmod_ident of Longident.t loc
+    | Pmod_structure of structure
+    | Pmod_functor of functor_parameter * module_expr
+    | Pmod_apply of module_expr * module_expr
+    | Pmod_constraint of module_expr * module_type
+    | Pmod_unpack of expression
+    | Pmod_extension of extension
+    | Pmod_instance of module_instance
+
+  val of_parsetree : module_expr_desc -> t
+  val to_parsetree : t -> module_expr_desc
+end
+
+module Ast_traverse : sig
+  module Jane_street_extensions0 (T : sig
+      type 'a t
+    end) : sig
+    class type t = object
+      method jkind_annotation : jkind_annotation T.t
+      method jkind_annotation_desc : jkind_annotation_desc T.t
+      method function_body : Pexp_function.function_body T.t
+      method function_param : Pexp_function.function_param T.t
+      method function_param_desc : Pexp_function.function_param_desc T.t
+      method function_constraint : Pexp_function.function_constraint T.t
+      method type_constraint : Pexp_function.type_constraint T.t
+      method modes : Modes.t T.t
+      method mode : Mode.t T.t
+      method signature_items : signature_item list T.t
+    end
+  end
+
+  module Jane_street_extensions1 (T : sig
+      type ('a, 'b) t
+    end) : sig
+    class type ['ctx] t = object
+      method jkind_annotation : ('ctx, jkind_annotation) T.t
+      method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
+      method function_body : ('ctx, Pexp_function.function_body) T.t
+      method function_param : ('ctx, Pexp_function.function_param) T.t
+      method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
+      method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
+      method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
+      method modes : ('ctx, Modes.t) T.t
+      method mode : ('ctx, Mode.t) T.t
+      method signature_items : ('ctx, signature_item list) T.t
+    end
+  end
+
+  module Ts : sig
+    module Map : sig
+      type 'a t = 'a Ppxlib_traverse_builtins.T.map
+    end
+
+    module Iter : sig
+      type 'a t = 'a Ppxlib_traverse_builtins.T.iter
+    end
+
+    module Fold : sig
+      type ('a, 'b) t = ('b, 'a) Ppxlib_traverse_builtins.T.fold
+    end
+
+    module Fold_map : sig
+      type ('a, 'b) t = ('b, 'a) Ppxlib_traverse_builtins.T.fold_map
+    end
+
+    module Map_with_context : sig
+      type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
+    end
+  end
+
+  class virtual map : object
+    inherit Ppxlib_ast.Ast.map
+    inherit Jane_street_extensions0(Ts.Map).t
+  end
+
+  class virtual iter : object
+    inherit Ppxlib_ast.Ast.iter
+    inherit Jane_street_extensions0(Ts.Iter).t
+  end
+
+  class virtual ['ctx] fold : object
+    inherit ['ctx] Ppxlib_ast.Ast.fold
+    inherit ['ctx] Jane_street_extensions1(Ts.Fold).t
+  end
+
+  class virtual ['ctx] fold_map : object
+    inherit ['ctx] Ppxlib_ast.Ast.fold_map
+    inherit ['ctx] Jane_street_extensions1(Ts.Fold_map).t
+  end
+
+  class virtual ['ctx] map_with_context : object
+    inherit ['ctx] Ppxlib_ast.Ast.map_with_context
+    inherit ['ctx] Jane_street_extensions1(Ts.Map_with_context).t
+  end
 end

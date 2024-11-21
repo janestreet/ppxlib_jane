@@ -10,6 +10,7 @@ module type S = sig
   type modalities := Shim.Modalities.t
   type modes := Shim.Modes.t
   type include_kind := Shim.Include_kind.t
+  type jkind_annotation := Shim.jkind_annotation
 
   module Pcstr_tuple_arg := Shim.Pcstr_tuple_arg
 
@@ -44,6 +45,11 @@ module type S = sig
   (** Construct a [Psig_include] with modalities *)
   val psig_include
     : (modalities:modalities -> include_description -> signature_item) with_loc
+
+  (** Construct a [signature] *)
+  val signature : (signature_item list -> signature) with_loc
+
+  val pmty_signature : (signature -> module_type) with_loc
 
   (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
       constructor, that attaches no modalities to any field. Equivalent to [pcstr_tuple]
@@ -255,7 +261,7 @@ module type S = sig
   val enativeint_u : (nativeint -> expression) with_loc
 
   (** e.g. [#42.] *)
-  val efloat_u : (float -> expression) with_loc
+  val efloat_u : (string -> expression) with_loc
 
   (** {3 Pattern literals} *)
 
@@ -269,7 +275,43 @@ module type S = sig
   val pnativeint_u : (nativeint -> pattern) with_loc
 
   (** e.g. [#42.] *)
-  val pfloat_u : (float -> pattern) with_loc
+  val pfloat_u : (string -> pattern) with_loc
+
+  (** {3 Layouts} *)
+
+  val ptyp_poly
+    : (?attrs:attributes
+       -> (string loc * jkind_annotation option) list
+       -> core_type
+       -> core_type)
+        with_loc
+
+  val pexp_newtype
+    : (?attrs:attributes
+       -> string loc
+       -> jkind_annotation option
+       -> expression
+       -> expression)
+        with_loc
+
+  (** {2 Labeled tuples} *)
+
+  val ptyp_tuple
+    : (?attrs:attributes -> (string option * core_type) list -> core_type) with_loc
+
+  val pexp_tuple
+    : (?attrs:attributes -> (string option * expression) list -> expression) with_loc
+
+  val ppat_tuple
+    : (?attrs:attributes -> (string option * pattern) list -> closed_flag -> pattern)
+        with_loc
+
+  (** {2 Immutable arrays} *)
+
+  val ppat_array : (?attrs:attributes -> mutable_flag -> pattern list -> pattern) with_loc
+
+  val pexp_array
+    : (?attrs:attributes -> mutable_flag -> expression list -> expression) with_loc
 end
 
 module type S_with_implicit_loc = S with type 'a with_loc := 'a
