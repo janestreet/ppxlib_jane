@@ -8,9 +8,8 @@ include Shim
 module Default = struct
   include Shim
 
-  type function_param = Shim.Pexp_function.function_param
+  type function_param = Shim.Pexp_function.jfunction_param
   type function_constraint = Shim.Pexp_function.function_constraint
-  type function_body = Shim.Pexp_function.function_body
 
   let mktyp ~loc ?(attrs = []) ptyp_desc =
     { ptyp_loc_stack = []; ptyp_attributes = attrs; ptyp_loc = loc; ptyp_desc }
@@ -62,7 +61,7 @@ module Default = struct
     mkpat ~loc ppat_desc
   ;;
 
-  let value_binding = Shim.Value_binding.create
+  let value_binding = Shim.Value_binding.create ~constraint_:None
 
   let pcstr_tuple ~loc modalities_tys =
     Pcstr_tuple

@@ -79,8 +79,8 @@ end
 module Value_binding = struct
   let extract_modes vb = [], vb
 
-  let create ~loc ~pat ~expr ~modes:_ =
-    { pvb_pat = pat; pvb_expr = expr; pvb_attributes = []; pvb_loc = loc }
+  let create ~loc ~constraint_ ~pat ~expr ~modes:_ =
+    { pvb_pat = pat; pvb_expr = expr; pvb_attributes = []; pvb_loc = loc; pvb_constraint = constraint_ }
   ;;
 end
 
@@ -133,108 +133,39 @@ module Constant = struct
 end
 
 module Pexp_function = struct
-  type function_param_desc =
+  type jfunction_param_desc =
     | Pparam_val of arg_label * expression option * pattern
     | Pparam_newtype of string loc * jkind_annotation option
 
-  type function_param =
+  type jfunction_param =
     { pparam_loc : Location.t
-    ; pparam_desc : function_param_desc
+    ; pparam_desc : jfunction_param_desc
     }
-
-  type type_constraint =
-    | Pconstraint of core_type
-    | Pcoerce of core_type option * core_type
 
   type function_constraint =
     { mode_annotations : Modes.t
     ; type_constraint : type_constraint
     }
 
-  type function_body =
-    | Pfunction_body of expression
-    | Pfunction_cases of case list * Location.t * attributes
-
   let to_parsetree ~params ~constraint_ ~body =
-    let body =
-      match body with
-      | Pfunction_body body -> body
-      | Pfunction_cases (cases, loc, pexp_attributes) ->
-        Ast_helper.Exp.function_ cases ~loc ~attrs:pexp_attributes
+    let to_function_params : jfunction_param -> function_param = fun v -> match v.pparam_desc with
+      | Pparam_newtype (ty, _) -> { pparam_desc = Pparam_newtype ty; pparam_loc = v.pparam_loc }
+      | Pparam_val (lbl, e, p) -> { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
     in
-    let body =
-      match constraint_ with
-      | None -> body
-      | Some { type_constraint = Pconstraint ty; _ } ->
-        let body_loc = { body.pexp_loc with loc_ghost = true } in
-        Ast_helper.Exp.constraint_ body ty ~loc:body_loc
-      | Some { type_constraint = Pcoerce (ty1, ty2); _ } ->
-        let body_loc = { body.pexp_loc with loc_ghost = true } in
-        Ast_helper.Exp.coerce body ty1 ty2 ~loc:body_loc
-    in
-    let fun_ =
-      ListLabels.fold_right params ~init:body ~f:(fun param body ->
-        let loc : Location.t =
-          { loc_start = param.pparam_loc.loc_start
-          ; loc_end = body.pexp_loc.loc_end
-          ; loc_ghost = true
-          }
-        in
-        match param.pparam_desc with
-        | Pparam_val (lbl, eo, pat) -> Ast_helper.Exp.fun_ lbl eo pat body ~loc
-        | Pparam_newtype (newtype, _) -> Ast_helper.Exp.newtype newtype body ~loc)
-    in
-    fun_.pexp_desc
+    let type_constraint = Option.map (fun v -> v.type_constraint) constraint_ in 
+    Pexp_function (List.map to_function_params params, type_constraint, body) 
   ;;
 
   let of_parsetree =
-    let body_of_parsetree body =
-      match body.pexp_desc with
-      | Pexp_function cases -> Pfunction_cases (cases, body.pexp_loc, body.pexp_attributes)
-      | _ -> Pfunction_body body
-    in
-    let finish ~rev_params ~constraint_ ~body =
-      let body = body_of_parsetree body in
-      match rev_params, constraint_, body with
-      | [], _, Pfunction_body _ -> None
-      | [], Some _, Pfunction_cases _ -> None
-      | rev_params, constraint_, body ->
-        let constraint_ : function_constraint option =
-          match constraint_ with
-          | None -> None
-          | Some type_constraint -> Some { mode_annotations = []; type_constraint }
-        in
-        Some (List.rev rev_params, constraint_, body)
-    in
-    let rec loop_expr_desc expr_desc ~rev_params ~containing_expr =
+    let to_jfunction_params : function_param -> jfunction_param = fun v -> match v.pparam_desc with
+      | Pparam_newtype ty -> { pparam_desc = Pparam_newtype (ty, None); pparam_loc = v.pparam_loc }
+      | Pparam_val (lbl, e, p) -> { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
+    in fun expr_desc ~loc ->
       match expr_desc with
-      | Pexp_newtype (ty, body) ->
-        loop_expr
-          body
-          ~rev_params:
-            ({ pparam_loc = ty.loc; pparam_desc = Pparam_newtype (ty, None) }
-             :: rev_params)
-      | Pexp_fun (lbl, eo, pat, body) ->
-        loop_expr
-          body
-          ~rev_params:
-            ({ pparam_loc = pat.ppat_loc; pparam_desc = Pparam_val (lbl, eo, pat) }
-             :: rev_params)
-      | Pexp_constraint (body, ty) ->
-        finish ~rev_params ~constraint_:(Some (Pconstraint ty)) ~body
-      | _ ->
-        (match containing_expr with
-         | None -> None
-         | Some body -> finish ~rev_params ~constraint_:None ~body)
-    and loop_expr expr ~rev_params =
-      match expr.pexp_attributes with
-      | _ :: _ -> finish ~rev_params ~constraint_:None ~body:expr
-      | [] -> loop_expr_desc expr.pexp_desc ~rev_params ~containing_expr:(Some expr)
-    in
-    fun expr_desc ~loc ->
-      match expr_desc with
-      | Pexp_function cases -> Some ([], None, Pfunction_cases (cases, loc, []))
-      | _ -> loop_expr_desc expr_desc ~rev_params:[] ~containing_expr:None
+      | Pexp_function (params, constraint_, body) ->
+        let function_constraint = Option.map (fun type_constraint -> { type_constraint; mode_annotations = [] }) constraint_ in
+        Some (List.map to_jfunction_params params, function_constraint, body)
+      | _ -> None
   ;;
 end
 
@@ -265,11 +196,12 @@ module Core_type_desc = struct
     | Ptyp_constr of Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
     | Ptyp_class of Longident.t loc * core_type list
-    | Ptyp_alias of core_type * string loc option * jkind_annotation option
+    | Ptyp_alias of core_type * string loc * jkind_annotation option
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
     | Ptyp_extension of extension
+    | Ptyp_open of Longident.t loc * core_type
 
   let of_parsetree : core_type_desc -> t = function
     (* changed constructors *)
@@ -277,9 +209,7 @@ module Core_type_desc = struct
     | Ptyp_tuple a -> Ptyp_tuple (add_none_labels a)
     | Ptyp_any -> Ptyp_any None
     | Ptyp_var s -> Ptyp_var (s, None)
-    | Ptyp_alias (a, b) ->
-      let ghost_alias_loc = { a.ptyp_loc with loc_ghost = true } in
-      Ptyp_alias (a, Some { txt = b; loc = ghost_alias_loc }, None)
+    | Ptyp_alias (a, b) -> Ptyp_alias (a, b, None)
     | Ptyp_poly (a, b) -> Ptyp_poly (List.map (fun x -> x, None) a, b)
     (* unchanged constructors *)
     | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
@@ -288,14 +218,7 @@ module Core_type_desc = struct
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_package a -> Ptyp_package a
     | Ptyp_extension a -> Ptyp_extension a
-  ;;
-
-  let fresh_name =
-    let r = ref 0 in
-    fun name ->
-      let i = !r in
-      incr r;
-      name ^ string_of_int i
+    | Ptyp_open (a, b) -> Ptyp_open (a, b)
   ;;
 
   let to_parsetree : t -> core_type_desc = function
@@ -304,8 +227,7 @@ module Core_type_desc = struct
     | Ptyp_any (_ : jkind_annotation option) -> Ptyp_any
     | Ptyp_var (s, _) -> Ptyp_var s
     | Ptyp_poly (a, b) -> Ptyp_poly (List.map fst a, b)
-    | Ptyp_alias (a, Some b, _) -> Ptyp_alias (a, b.txt)
-    | Ptyp_alias (a, None, _) -> Ptyp_alias (a, fresh_name "_alias")
+    | Ptyp_alias (a, b, _) -> Ptyp_alias (a, b)
     | Ptyp_tuple labeled_typs ->
       (match as_unlabeled_tuple labeled_typs with
        | Some typs -> Ptyp_tuple typs
@@ -328,6 +250,7 @@ module Core_type_desc = struct
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_package a -> Ptyp_package a
     | Ptyp_extension a -> Ptyp_extension a
+    | Ptyp_open (a, b) -> Ptyp_open (a, b)
   ;;
 end
 
@@ -456,9 +379,9 @@ module Expression_desc = struct
     | Pexp_constant of constant
     | Pexp_let of rec_flag * value_binding list * expression
     | Pexp_function of
-        Pexp_function.function_param list
+        Pexp_function.jfunction_param list
         * Pexp_function.function_constraint option
-        * Pexp_function.function_body
+        * function_body
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
@@ -565,7 +488,7 @@ module Expression_desc = struct
     | Some (x1, x2, x3) -> Pexp_function (x1, x2, x3)
     | None ->
       (match expr_desc with
-       | Pexp_function _ | Pexp_fun _ ->
+       | Pexp_function _ -> 
          (* matched by above call to [of_parsetree] *)
          assert false
        | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, Some x2, [])
@@ -829,6 +752,7 @@ module Module_expr_desc = struct
     | Pmod_unpack of expression
     | Pmod_extension of extension
     | Pmod_instance of module_instance
+    | Pmod_apply_unit of module_expr
 
   let of_parsetree : module_expr_desc -> t = function
     | Pmod_ident x -> Pmod_ident x
@@ -838,6 +762,7 @@ module Module_expr_desc = struct
     | Pmod_constraint (x0, x1) -> Pmod_constraint (x0, x1)
     | Pmod_unpack x -> Pmod_unpack x
     | Pmod_extension x -> Pmod_extension x
+    | Pmod_apply_unit x -> Pmod_apply_unit x
   ;;
 
   let to_parsetree : t -> module_expr_desc = function
@@ -852,6 +777,7 @@ module Module_expr_desc = struct
     | Pmod_constraint (x0, x1) -> Pmod_constraint (x0, x1)
     | Pmod_unpack x -> Pmod_unpack x
     | Pmod_extension x -> Pmod_extension x
+    | Pmod_apply_unit x -> Pmod_apply_unit x
   ;;
 end
 
@@ -872,27 +798,19 @@ module Ast_traverse = struct
       ; pjkind_desc : jkind_annotation_desc
       }
 
-    and function_param_desc = Pexp_function.function_param_desc =
+    and function_param_desc = Pexp_function.jfunction_param_desc =
       | Pparam_val of arg_label * expression option * pattern
       | Pparam_newtype of string loc * jkind_annotation option
 
-    and function_param = Pexp_function.function_param =
+    and function_param = Pexp_function.jfunction_param =
       { pparam_loc : location
       ; pparam_desc : function_param_desc
       }
 
-    and type_constraint = Pexp_function.type_constraint =
-      | Pconstraint of core_type
-      | Pcoerce of core_type option * core_type
-
     and function_constraint = Pexp_function.function_constraint =
-      { mode_annotations : modes
-      ; type_constraint : type_constraint
-      }
-
-    and function_body = Pexp_function.function_body =
-      | Pfunction_body of expression
-      | Pfunction_cases of case list * location * attributes
+    { mode_annotations : Modes.t
+    ; type_constraint : type_constraint
+    }
 
     and mode = Mode.t = Mode of string [@@unboxed]
     and modes = mode loc list
@@ -913,6 +831,7 @@ module Ast_traverse = struct
         method virtual pattern : pattern -> pattern
         method virtual signature_item : signature_item -> signature_item
         method virtual string : string -> string
+        method virtual type_constraint : type_constraint -> type_constraint
 
         method jkind_annotation_desc : jkind_annotation_desc -> jkind_annotation_desc =
           fun x ->
@@ -942,7 +861,7 @@ module Ast_traverse = struct
             let pjkind_desc = self#jkind_annotation_desc pjkind_desc in
             { pjkind_loc; pjkind_desc }
 
-        method function_param_desc : function_param_desc -> function_param_desc =
+        method jfunction_param_desc : function_param_desc -> function_param_desc =
           fun x ->
             match x with
             | Pparam_val (a, b, c) ->
@@ -955,40 +874,17 @@ module Ast_traverse = struct
               let b = self#option self#jkind_annotation b in
               Pparam_newtype (a, b)
 
-        method function_param : function_param -> function_param =
+        method jfunction_param : function_param -> function_param =
           fun { pparam_loc; pparam_desc } ->
             let pparam_loc = self#location pparam_loc in
-            let pparam_desc = self#function_param_desc pparam_desc in
+            let pparam_desc = self#jfunction_param_desc pparam_desc in
             { pparam_loc; pparam_desc }
-
-        method type_constraint : type_constraint -> type_constraint =
-          fun x ->
-            match x with
-            | Pconstraint a ->
-              let a = self#core_type a in
-              Pconstraint a
-            | Pcoerce (a, b) ->
-              let a = self#option self#core_type a in
-              let b = self#core_type b in
-              Pcoerce (a, b)
 
         method function_constraint : function_constraint -> function_constraint =
           fun { mode_annotations; type_constraint } ->
             let mode_annotations = self#modes mode_annotations in
             let type_constraint = self#type_constraint type_constraint in
             { mode_annotations; type_constraint }
-
-        method function_body : function_body -> function_body =
-          fun x ->
-            match x with
-            | Pfunction_body a ->
-              let a = self#expression a in
-              Pfunction_body a
-            | Pfunction_cases (a, b, c) ->
-              let a = self#list self#case a in
-              let b = self#location b in
-              let c = self#attributes c in
-              Pfunction_cases (a, b, c)
 
         method mode : mode -> mode =
           fun x ->
@@ -1019,6 +915,7 @@ module Ast_traverse = struct
         method virtual pattern : pattern -> unit
         method virtual signature_item : signature_item -> unit
         method virtual string : string -> unit
+        method virtual type_constraint : type_constraint -> unit
 
         method jkind_annotation_desc : jkind_annotation_desc -> unit =
           fun x ->
@@ -1039,7 +936,7 @@ module Ast_traverse = struct
             self#location pjkind_loc;
             self#jkind_annotation_desc pjkind_desc
 
-        method function_param_desc : function_param_desc -> unit =
+        method jfunction_param_desc : function_param_desc -> unit =
           fun x ->
             match x with
             | Pparam_val (a, b, c) ->
@@ -1050,32 +947,15 @@ module Ast_traverse = struct
               self#loc self#string a;
               self#option self#jkind_annotation b
 
-        method function_param : function_param -> unit =
+        method jfunction_param : function_param -> unit =
           fun { pparam_loc; pparam_desc } ->
             self#location pparam_loc;
-            self#function_param_desc pparam_desc
-
-        method type_constraint : type_constraint -> unit =
-          fun x ->
-            match x with
-            | Pconstraint a -> self#core_type a
-            | Pcoerce (a, b) ->
-              self#option self#core_type a;
-              self#core_type b
+            self#jfunction_param_desc pparam_desc
 
         method function_constraint : function_constraint -> unit =
           fun { mode_annotations; type_constraint } ->
             self#modes mode_annotations;
             self#type_constraint type_constraint
-
-        method function_body : function_body -> unit =
-          fun x ->
-            match x with
-            | Pfunction_body a -> self#expression a
-            | Pfunction_cases (a, b, c) ->
-              self#list self#case a;
-              self#location b;
-              self#attributes c
 
         method mode : mode -> unit =
           fun x ->
@@ -1101,6 +981,7 @@ module Ast_traverse = struct
         method virtual pattern : pattern -> 'acc -> 'acc
         method virtual signature_item : signature_item -> 'acc -> 'acc
         method virtual string : string -> 'acc -> 'acc
+        method virtual type_constraint : type_constraint -> 'acc -> 'acc
 
         method jkind_annotation_desc : jkind_annotation_desc -> 'acc -> 'acc =
           fun x acc ->
@@ -1124,7 +1005,7 @@ module Ast_traverse = struct
             let acc = self#jkind_annotation_desc pjkind_desc acc in
             acc
 
-        method function_param_desc : function_param_desc -> 'acc -> 'acc =
+        method jfunction_param_desc : function_param_desc -> 'acc -> 'acc =
           fun x acc ->
             match x with
             | Pparam_val (a, b, c) ->
@@ -1137,36 +1018,17 @@ module Ast_traverse = struct
               let acc = self#option self#jkind_annotation b acc in
               acc
 
-        method function_param : function_param -> 'acc -> 'acc =
+        method jfunction_param : function_param -> 'acc -> 'acc =
           fun { pparam_loc; pparam_desc } acc ->
             let acc = self#location pparam_loc acc in
-            let acc = self#function_param_desc pparam_desc acc in
+            let acc = self#jfunction_param_desc pparam_desc acc in
             acc
-
-        method type_constraint : type_constraint -> 'acc -> 'acc =
-          fun x acc ->
-            match x with
-            | Pconstraint a -> self#core_type a acc
-            | Pcoerce (a, b) ->
-              let acc = self#option self#core_type a acc in
-              let acc = self#core_type b acc in
-              acc
 
         method function_constraint : function_constraint -> 'acc -> 'acc =
           fun { mode_annotations; type_constraint } acc ->
             let acc = self#modes mode_annotations acc in
             let acc = self#type_constraint type_constraint acc in
             acc
-
-        method function_body : function_body -> 'acc -> 'acc =
-          fun x acc ->
-            match x with
-            | Pfunction_body a -> self#expression a acc
-            | Pfunction_cases (a, b, c) ->
-              let acc = self#list self#case a acc in
-              let acc = self#location b acc in
-              let acc = self#attributes c acc in
-              acc
 
         method mode : mode -> 'acc -> 'acc =
           fun x acc ->
@@ -1206,6 +1068,7 @@ module Ast_traverse = struct
         method virtual pattern : pattern -> 'acc -> pattern * 'acc
         method virtual signature_item : signature_item -> 'acc -> signature_item * 'acc
         method virtual string : string -> 'acc -> string * 'acc
+        method virtual type_constraint : type_constraint -> 'acc -> type_constraint * 'acc
 
         method jkind_annotation_desc
           : jkind_annotation_desc -> 'acc -> jkind_annotation_desc * 'acc =
@@ -1236,7 +1099,7 @@ module Ast_traverse = struct
             let pjkind_desc, acc = self#jkind_annotation_desc pjkind_desc acc in
             { pjkind_loc; pjkind_desc }, acc
 
-        method function_param_desc
+        method jfunction_param_desc
           : function_param_desc -> 'acc -> function_param_desc * 'acc =
           fun x acc ->
             match x with
@@ -1250,22 +1113,11 @@ module Ast_traverse = struct
               let b, acc = self#option self#jkind_annotation b acc in
               Pparam_newtype (a, b), acc
 
-        method function_param : function_param -> 'acc -> function_param * 'acc =
+        method jfunction_param : function_param -> 'acc -> function_param * 'acc =
           fun { pparam_loc; pparam_desc } acc ->
             let pparam_loc, acc = self#location pparam_loc acc in
-            let pparam_desc, acc = self#function_param_desc pparam_desc acc in
+            let pparam_desc, acc = self#jfunction_param_desc pparam_desc acc in
             { pparam_loc; pparam_desc }, acc
-
-        method type_constraint : type_constraint -> 'acc -> type_constraint * 'acc =
-          fun x acc ->
-            match x with
-            | Pconstraint a ->
-              let a, acc = self#core_type a acc in
-              Pconstraint a, acc
-            | Pcoerce (a, b) ->
-              let a, acc = self#option self#core_type a acc in
-              let b, acc = self#core_type b acc in
-              Pcoerce (a, b), acc
 
         method function_constraint
           : function_constraint -> 'acc -> function_constraint * 'acc =
@@ -1273,18 +1125,6 @@ module Ast_traverse = struct
             let mode_annotations, acc = self#modes mode_annotations acc in
             let type_constraint, acc = self#type_constraint type_constraint acc in
             { mode_annotations; type_constraint }, acc
-
-        method function_body : function_body -> 'acc -> function_body * 'acc =
-          fun x acc ->
-            match x with
-            | Pfunction_body a ->
-              let a, acc = self#expression a acc in
-              Pfunction_body a, acc
-            | Pfunction_cases (a, b, c) ->
-              let a, acc = self#list self#case a acc in
-              let b, acc = self#location b acc in
-              let c, acc = self#attributes c acc in
-              Pfunction_cases (a, b, c), acc
 
         method mode : mode -> 'acc -> mode * 'acc =
           fun x acc ->
@@ -1315,6 +1155,7 @@ module Ast_traverse = struct
         method virtual pattern : 'ctx -> pattern -> pattern
         method virtual signature_item : 'ctx -> signature_item -> signature_item
         method virtual string : 'ctx -> string -> string
+        method virtual type_constraint : 'ctx -> type_constraint -> type_constraint
 
         method jkind_annotation_desc
           : 'ctx -> jkind_annotation_desc -> jkind_annotation_desc =
@@ -1345,7 +1186,7 @@ module Ast_traverse = struct
             let pjkind_desc = self#jkind_annotation_desc ctx pjkind_desc in
             { pjkind_loc; pjkind_desc }
 
-        method function_param_desc : 'ctx -> function_param_desc -> function_param_desc =
+        method jfunction_param_desc : 'ctx -> function_param_desc -> function_param_desc =
           fun ctx x ->
             match x with
             | Pparam_val (a, b, c) ->
@@ -1358,40 +1199,17 @@ module Ast_traverse = struct
               let b = self#option self#jkind_annotation ctx b in
               Pparam_newtype (a, b)
 
-        method function_param : 'ctx -> function_param -> function_param =
+        method jfunction_param : 'ctx -> function_param -> function_param =
           fun ctx { pparam_loc; pparam_desc } ->
             let pparam_loc = self#location ctx pparam_loc in
-            let pparam_desc = self#function_param_desc ctx pparam_desc in
+            let pparam_desc = self#jfunction_param_desc ctx pparam_desc in
             { pparam_loc; pparam_desc }
-
-        method type_constraint : 'ctx -> type_constraint -> type_constraint =
-          fun ctx x ->
-            match x with
-            | Pconstraint a ->
-              let a = self#core_type ctx a in
-              Pconstraint a
-            | Pcoerce (a, b) ->
-              let a = self#option self#core_type ctx a in
-              let b = self#core_type ctx b in
-              Pcoerce (a, b)
 
         method function_constraint : 'ctx -> function_constraint -> function_constraint =
           fun ctx { mode_annotations; type_constraint } ->
             let mode_annotations = self#modes ctx mode_annotations in
             let type_constraint = self#type_constraint ctx type_constraint in
             { mode_annotations; type_constraint }
-
-        method function_body : 'ctx -> function_body -> function_body =
-          fun ctx x ->
-            match x with
-            | Pfunction_body a ->
-              let a = self#expression ctx a in
-              Pfunction_body a
-            | Pfunction_cases (a, b, c) ->
-              let a = self#list self#case ctx a in
-              let b = self#location ctx b in
-              let c = self#attributes ctx c in
-              Pfunction_cases (a, b, c)
 
         method mode : 'ctx -> mode -> mode =
           fun ctx x ->
@@ -1424,6 +1242,7 @@ module Ast_traverse = struct
         method virtual pattern : pattern -> 'res
         method virtual signature_item : signature_item -> 'res
         method virtual string : string -> 'res
+        method virtual type_constraint : type_constraint -> 'res
 
         method jkind_annotation_desc : jkind_annotation_desc -> 'res =
           fun x ->
@@ -1453,7 +1272,7 @@ module Ast_traverse = struct
             let pjkind_desc = self#jkind_annotation_desc pjkind_desc in
             self#record [ "pjkind_loc", pjkind_loc; "pjkind_desc", pjkind_desc ]
 
-        method function_param_desc : function_param_desc -> 'res =
+        method jfunction_param_desc : function_param_desc -> 'res =
           fun x ->
             match x with
             | Pparam_val (a, b, c) ->
@@ -1466,22 +1285,11 @@ module Ast_traverse = struct
               let b = self#option self#jkind_annotation b in
               self#constr "Pparam_newtype" [ a; b ]
 
-        method function_param : function_param -> 'res =
+        method jfunction_param : function_param -> 'res =
           fun { pparam_loc; pparam_desc } ->
             let pparam_loc = self#location pparam_loc in
-            let pparam_desc = self#function_param_desc pparam_desc in
+            let pparam_desc = self#jfunction_param_desc pparam_desc in
             self#record [ "pparam_loc", pparam_loc; "pparam_desc", pparam_desc ]
-
-        method type_constraint : type_constraint -> 'res =
-          fun x ->
-            match x with
-            | Pconstraint a ->
-              let a = self#core_type a in
-              self#constr "Pconstraint" [ a ]
-            | Pcoerce (a, b) ->
-              let a = self#option self#core_type a in
-              let b = self#core_type b in
-              self#constr "Pcoerce" [ a; b ]
 
         method function_constraint : function_constraint -> 'res =
           fun { mode_annotations; type_constraint } ->
@@ -1489,18 +1297,6 @@ module Ast_traverse = struct
             let type_constraint = self#type_constraint type_constraint in
             self#record
               [ "mode_annotations", mode_annotations; "type_constraint", type_constraint ]
-
-        method function_body : function_body -> 'res =
-          fun x ->
-            match x with
-            | Pfunction_body a ->
-              let a = self#expression a in
-              self#constr "Pfunction_body" [ a ]
-            | Pfunction_cases (a, b, c) ->
-              let a = self#list self#case a in
-              let b = self#location b in
-              let c = self#attributes c in
-              self#constr "Pfunction_cases" [ a; b; c ]
 
         method mode : mode -> 'res =
           fun x ->
@@ -1541,6 +1337,7 @@ module Ast_traverse = struct
         method virtual pattern : 'ctx -> pattern -> pattern * 'res
         method virtual signature_item : 'ctx -> signature_item -> signature_item * 'res
         method virtual string : 'ctx -> string -> string * 'res
+        method virtual type_constraint : 'ctx -> type_constraint -> type_constraint * 'res
 
         method jkind_annotation_desc
           : 'ctx -> jkind_annotation_desc -> jkind_annotation_desc * 'res =
@@ -1578,7 +1375,7 @@ module Ast_traverse = struct
                 ; "pjkind_desc", Stdlib.snd pjkind_desc
                 ] )
 
-        method function_param_desc
+        method jfunction_param_desc
           : 'ctx -> function_param_desc -> function_param_desc * 'res =
           fun ctx x ->
             match x with
@@ -1595,29 +1392,17 @@ module Ast_traverse = struct
               ( Pparam_newtype (Stdlib.fst a, Stdlib.fst b)
               , self#constr ctx "Pparam_newtype" [ Stdlib.snd a; Stdlib.snd b ] )
 
-        method function_param : 'ctx -> function_param -> function_param * 'res =
+        method jfunction_param : 'ctx -> function_param -> function_param * 'res =
           fun ctx { pparam_loc; pparam_desc } ->
             let pparam_loc = self#location ctx pparam_loc in
-            let pparam_desc = self#function_param_desc ctx pparam_desc in
+            let pparam_desc = self#jfunction_param_desc ctx pparam_desc in
             ( { pparam_loc = Stdlib.fst pparam_loc; pparam_desc = Stdlib.fst pparam_desc }
             , self#record
                 ctx
                 [ "pparam_loc", Stdlib.snd pparam_loc
                 ; "pparam_desc", Stdlib.snd pparam_desc
                 ] )
-
-        method type_constraint : 'ctx -> type_constraint -> type_constraint * 'res =
-          fun ctx x ->
-            match x with
-            | Pconstraint a ->
-              let a = self#core_type ctx a in
-              Pconstraint (Stdlib.fst a), self#constr ctx "Pconstraint" [ Stdlib.snd a ]
-            | Pcoerce (a, b) ->
-              let a = self#option self#core_type ctx a in
-              let b = self#core_type ctx b in
-              ( Pcoerce (Stdlib.fst a, Stdlib.fst b)
-              , self#constr ctx "Pcoerce" [ Stdlib.snd a; Stdlib.snd b ] )
-
+       
         method function_constraint
           : 'ctx -> function_constraint -> function_constraint * 'res =
           fun ctx { mode_annotations; type_constraint } ->
@@ -1631,23 +1416,6 @@ module Ast_traverse = struct
                 [ "mode_annotations", Stdlib.snd mode_annotations
                 ; "type_constraint", Stdlib.snd type_constraint
                 ] )
-
-        method function_body : 'ctx -> function_body -> function_body * 'res =
-          fun ctx x ->
-            match x with
-            | Pfunction_body a ->
-              let a = self#expression ctx a in
-              ( Pfunction_body (Stdlib.fst a)
-              , self#constr ctx "Pfunction_body" [ Stdlib.snd a ] )
-            | Pfunction_cases (a, b, c) ->
-              let a = self#list self#case ctx a in
-              let b = self#location ctx b in
-              let c = self#attributes ctx c in
-              ( Pfunction_cases (Stdlib.fst a, Stdlib.fst b, Stdlib.fst c)
-              , self#constr
-                  ctx
-                  "Pfunction_cases"
-                  [ Stdlib.snd a; Stdlib.snd b; Stdlib.snd c ] )
 
         method mode : 'ctx -> mode -> mode * 'res =
           fun ctx x ->
@@ -1674,11 +1442,9 @@ module Ast_traverse = struct
     class type t = object
       method jkind_annotation : jkind_annotation T.t
       method jkind_annotation_desc : jkind_annotation_desc T.t
-      method function_body : Pexp_function.function_body T.t
-      method function_param : Pexp_function.function_param T.t
-      method function_param_desc : Pexp_function.function_param_desc T.t
+      method jfunction_param : Pexp_function.jfunction_param T.t
+      method jfunction_param_desc : Pexp_function.jfunction_param_desc T.t
       method function_constraint : Pexp_function.function_constraint T.t
-      method type_constraint : Pexp_function.type_constraint T.t
       method modes : Modes.t T.t
       method mode : Mode.t T.t
       method signature_items : signature_item list T.t
@@ -1692,11 +1458,9 @@ module Ast_traverse = struct
     class type ['ctx] t = object
       method jkind_annotation : ('ctx, jkind_annotation) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
-      method function_body : ('ctx, Pexp_function.function_body) T.t
-      method function_param : ('ctx, Pexp_function.function_param) T.t
-      method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
+      method jfunction_param : ('ctx, Pexp_function.jfunction_param) T.t
+      method jfunction_param_desc : ('ctx, Pexp_function.jfunction_param_desc) T.t
       method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
-      method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
       method modes : ('ctx, Modes.t) T.t
       method mode : ('ctx, Mode.t) T.t
       method signature_items : ('ctx, signature_item list) T.t

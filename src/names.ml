@@ -16,6 +16,7 @@ module Language_feature_name = struct
     | Ptyp_poly _ -> "explicit polymorphic type"
     | Ptyp_package _ -> "first-class module type"
     | Ptyp_extension _ -> "extension point as a type"
+    | Ptyp_open _ -> "local module open"
   ;;
 
   let of_expression_desc : Shim.Expression_desc.t -> string = function
@@ -161,6 +162,7 @@ module Language_feature_name = struct
     | Pmod_unpack _ -> "'val' unpacking of expression as module"
     | Pmod_extension _ -> "extension point as module"
     | Pmod_instance _ -> "module instance"
+    | Pmod_apply_unit _ -> "generative functor"
   ;;
 end
 
@@ -179,6 +181,7 @@ module Constructor_name = struct
     | Ptyp_poly _ -> "Ptyp_poly"
     | Ptyp_package _ -> "Ptyp_package"
     | Ptyp_extension _ -> "Ptyp_extension"
+    | Ptyp_open _ -> "Ptyp_open"
   ;;
 
   let of_expression_desc : Shim.Expression_desc.t -> string = function
@@ -304,5 +307,6 @@ module Constructor_name = struct
     | Pmod_unpack _ -> "Pmod_unpack"
     | Pmod_extension _ -> "Pmod_extension"
     | Pmod_instance _ -> "Pmod_instance"
+    | Pmod_apply_unit _ -> "Pmod_apply_unit"
   ;;
 end

@@ -99,6 +99,7 @@ module Value_binding : sig
 
   val create
     :  loc:Location.t
+    -> constraint_:value_constraint option
     -> pat:pattern
     -> expr:expression
     -> modes:Modes.t
@@ -137,30 +138,22 @@ end
 
 (** Match and construct [Pexp_function], as in the OCaml parsetree at or after 5.2. *)
 module Pexp_function : sig
-  type function_param_desc =
+  type jfunction_param_desc =
     | Pparam_val of arg_label * expression option * pattern
     | Pparam_newtype of string loc * jkind_annotation option
 
-  type function_param =
+  type jfunction_param =
     { pparam_loc : Location.t
-    ; pparam_desc : function_param_desc
+    ; pparam_desc : jfunction_param_desc
     }
-
-  type type_constraint =
-    | Pconstraint of core_type
-    | Pcoerce of core_type option * core_type
 
   type function_constraint =
     { mode_annotations : Modes.t
     ; type_constraint : type_constraint
     }
 
-  type function_body =
-    | Pfunction_body of expression
-    | Pfunction_cases of case list * Location.t * attributes
-
   val to_parsetree
-    :  params:function_param list
+    :  params:jfunction_param list
     -> constraint_:function_constraint option
     -> body:function_body
     -> expression_desc
@@ -168,7 +161,7 @@ module Pexp_function : sig
   val of_parsetree
     :  expression_desc
     -> loc:Location.t
-    -> (function_param list * function_constraint option * function_body) option
+    -> (jfunction_param list * function_constraint option * function_body) option
 end
 
 module Core_type_desc : sig
@@ -181,11 +174,12 @@ module Core_type_desc : sig
     | Ptyp_constr of Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
     | Ptyp_class of Longident.t loc * core_type list
-    | Ptyp_alias of core_type * string loc option * jkind_annotation option
+    | Ptyp_alias of core_type * string loc * jkind_annotation option
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
     | Ptyp_extension of extension
+    | Ptyp_open of Longident.t loc * core_type 
 
   val of_parsetree : core_type_desc -> t
   val to_parsetree : t -> core_type_desc
@@ -239,9 +233,9 @@ module Expression_desc : sig
     | Pexp_constant of constant
     | Pexp_let of rec_flag * value_binding list * expression
     | Pexp_function of
-        Pexp_function.function_param list
+        Pexp_function.jfunction_param list
         * Pexp_function.function_constraint option
-        * Pexp_function.function_body
+        * function_body
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
@@ -375,6 +369,7 @@ module Module_expr_desc : sig
     | Pmod_unpack of expression
     | Pmod_extension of extension
     | Pmod_instance of module_instance
+    | Pmod_apply_unit of module_expr
 
   val of_parsetree : module_expr_desc -> t
   val to_parsetree : t -> module_expr_desc
@@ -387,11 +382,9 @@ module Ast_traverse : sig
     class type t = object
       method jkind_annotation : jkind_annotation T.t
       method jkind_annotation_desc : jkind_annotation_desc T.t
-      method function_body : Pexp_function.function_body T.t
-      method function_param : Pexp_function.function_param T.t
-      method function_param_desc : Pexp_function.function_param_desc T.t
       method function_constraint : Pexp_function.function_constraint T.t
-      method type_constraint : Pexp_function.type_constraint T.t
+      method jfunction_param : Pexp_function.jfunction_param T.t
+      method jfunction_param_desc : Pexp_function.jfunction_param_desc T.t
       method modes : Modes.t T.t
       method mode : Mode.t T.t
       method signature_items : signature_item list T.t
@@ -404,11 +397,9 @@ module Ast_traverse : sig
     class type ['ctx] t = object
       method jkind_annotation : ('ctx, jkind_annotation) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
-      method function_body : ('ctx, Pexp_function.function_body) T.t
-      method function_param : ('ctx, Pexp_function.function_param) T.t
-      method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
       method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
-      method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
+      method jfunction_param : ('ctx, Pexp_function.jfunction_param) T.t
+      method jfunction_param_desc : ('ctx, Pexp_function.jfunction_param_desc) T.t
       method modes : ('ctx, Modes.t) T.t
       method mode : ('ctx, Mode.t) T.t
       method signature_items : ('ctx, signature_item list) T.t

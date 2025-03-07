@@ -18,9 +18,9 @@ type t =
   | Legacy_pexp_newtype of legacy_pexp_newtype
 
 let of_pexp_function
-  ~(params : Shim.Pexp_function.function_param list)
+  ~(params : Shim.Pexp_function.jfunction_param list)
   ~(constraint_ : Shim.Pexp_function.function_constraint option)
-  ~(body : Shim.Pexp_function.function_body)
+  ~(body : function_body)
   =
   match params, body with
   | [], Pfunction_cases (cases, _, _) -> Legacy_pexp_function cases
