@@ -373,6 +373,6 @@ end
 
 let make loc : (module S_with_implicit_loc) =
   (module Make (struct
-      let loc = loc
-    end))
+       let loc = loc
+     end))
 ;;

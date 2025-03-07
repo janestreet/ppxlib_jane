@@ -179,7 +179,7 @@ module Core_type_desc : sig
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
     | Ptyp_extension of extension
-    | Ptyp_open of Longident.t loc * core_type 
+    | Ptyp_open of Longident.t loc * core_type
 
   val of_parsetree : core_type_desc -> t
   val to_parsetree : t -> core_type_desc

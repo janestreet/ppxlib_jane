@@ -80,7 +80,12 @@ module Value_binding = struct
   let extract_modes vb = [], vb
 
   let create ~loc ~constraint_ ~pat ~expr ~modes:_ =
-    { pvb_pat = pat; pvb_expr = expr; pvb_attributes = []; pvb_loc = loc; pvb_constraint = constraint_ }
+    { pvb_pat = pat
+    ; pvb_expr = expr
+    ; pvb_attributes = []
+    ; pvb_loc = loc
+    ; pvb_constraint = constraint_
+    }
   ;;
 end
 
@@ -148,22 +153,35 @@ module Pexp_function = struct
     }
 
   let to_parsetree ~params ~constraint_ ~body =
-    let to_function_params : jfunction_param -> function_param = fun v -> match v.pparam_desc with
-      | Pparam_newtype (ty, _) -> { pparam_desc = Pparam_newtype ty; pparam_loc = v.pparam_loc }
-      | Pparam_val (lbl, e, p) -> { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
+    let to_function_params : jfunction_param -> function_param =
+      fun v ->
+      match v.pparam_desc with
+      | Pparam_newtype (ty, _) ->
+        { pparam_desc = Pparam_newtype ty; pparam_loc = v.pparam_loc }
+      | Pparam_val (lbl, e, p) ->
+        { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
     in
-    let type_constraint = Option.map (fun v -> v.type_constraint) constraint_ in 
-    Pexp_function (List.map to_function_params params, type_constraint, body) 
+    let type_constraint = Option.map (fun v -> v.type_constraint) constraint_ in
+    Pexp_function (List.map to_function_params params, type_constraint, body)
   ;;
 
   let of_parsetree =
-    let to_jfunction_params : function_param -> jfunction_param = fun v -> match v.pparam_desc with
-      | Pparam_newtype ty -> { pparam_desc = Pparam_newtype (ty, None); pparam_loc = v.pparam_loc }
-      | Pparam_val (lbl, e, p) -> { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
-    in fun expr_desc ~loc ->
+    let to_jfunction_params : function_param -> jfunction_param =
+      fun v ->
+      match v.pparam_desc with
+      | Pparam_newtype ty ->
+        { pparam_desc = Pparam_newtype (ty, None); pparam_loc = v.pparam_loc }
+      | Pparam_val (lbl, e, p) ->
+        { pparam_desc = Pparam_val (lbl, e, p); pparam_loc = v.pparam_loc }
+    in
+    fun expr_desc ~loc ->
       match expr_desc with
       | Pexp_function (params, constraint_, body) ->
-        let function_constraint = Option.map (fun type_constraint -> { type_constraint; mode_annotations = [] }) constraint_ in
+        let function_constraint =
+          Option.map
+            (fun type_constraint -> { type_constraint; mode_annotations = [] })
+            constraint_
+        in
         Some (List.map to_jfunction_params params, function_constraint, body)
       | _ -> None
   ;;
@@ -263,7 +281,7 @@ module Core_type = struct
     }
 
   let of_parsetree
-    { Ppxlib_ast.Parsetree.ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
+        { Ppxlib_ast.Parsetree.ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
     =
     let ptyp_desc = Core_type_desc.of_parsetree ptyp_desc in
     { ptyp_desc; ptyp_loc; ptyp_loc_stack; ptyp_attributes }
@@ -488,7 +506,7 @@ module Expression_desc = struct
     | Some (x1, x2, x3) -> Pexp_function (x1, x2, x3)
     | None ->
       (match expr_desc with
-       | Pexp_function _ -> 
+       | Pexp_function _ ->
          (* matched by above call to [of_parsetree] *)
          assert false
        | Pexp_constraint (x1, x2) -> Pexp_constraint (x1, Some x2, [])
@@ -808,9 +826,9 @@ module Ast_traverse = struct
       }
 
     and function_constraint = Pexp_function.function_constraint =
-    { mode_annotations : Modes.t
-    ; type_constraint : type_constraint
-    }
+      { mode_annotations : Modes.t
+      ; type_constraint : type_constraint
+      }
 
     and mode = Mode.t = Mode of string [@@unboxed]
     and modes = mode loc list
@@ -1402,7 +1420,7 @@ module Ast_traverse = struct
                 [ "pparam_loc", Stdlib.snd pparam_loc
                 ; "pparam_desc", Stdlib.snd pparam_desc
                 ] )
-       
+
         method function_constraint
           : 'ctx -> function_constraint -> function_constraint * 'res =
           fun ctx { mode_annotations; type_constraint } ->
