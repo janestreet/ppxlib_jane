@@ -37,9 +37,9 @@ type t =
 val of_parsetree : expression_desc -> t option
 
 val of_pexp_function
-  :  params:Shim.Pexp_function.function_param list
+  :  params:Shim.Pexp_function.jfunction_param list
   -> constraint_:Shim.Pexp_function.function_constraint option
-  -> body:Shim.Pexp_function.function_body
+  -> body:function_body
   -> t
 
 (** Testing a particular constructor of [t]. *)

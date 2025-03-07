@@ -133,9 +133,8 @@ module type S = sig
       case; the nested [function]s are treated as unary. (See the last example.)
   *)
 
-  type function_param = Shim.Pexp_function.function_param
+  type function_param = Shim.Pexp_function.jfunction_param
   type function_constraint = Shim.Pexp_function.function_constraint
-  type function_body = Shim.Pexp_function.function_body
 
   module Latest : sig
     (** Avoid shadowing [pexp_function] in Ppxlib's AST builder. *)
