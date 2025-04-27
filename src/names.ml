@@ -39,7 +39,10 @@ module Language_feature_name = struct
     | Pexp_variant _ -> "polymorphic variant constructor expression"
     | Pexp_record (_, None) -> "record expression"
     | Pexp_record (_, Some _) -> "record 'with' expression"
+    | Pexp_record_unboxed_product (_, None) -> "unboxed record expression"
+    | Pexp_record_unboxed_product (_, Some _) -> "unboxed record 'with' expression"
     | Pexp_field _ -> "field access expression"
+    | Pexp_unboxed_field _ -> "unboxed field access expression"
     | Pexp_setfield _ -> "field set expression"
     | Pexp_array (Mutable, _) -> "array expression"
     | Pexp_array (Immutable, _) -> "immutable array expression"
@@ -69,6 +72,8 @@ module Language_feature_name = struct
     | Pexp_stack _ -> "stack expression"
     | Pexp_comprehension (Pcomp_list_comprehension _) -> "list comprehension expression"
     | Pexp_comprehension (Pcomp_array_comprehension _) -> "array comprehension expression"
+    | Pexp_overwrite _ -> "overwrite"
+    | Pexp_hole -> "hole"
   ;;
 
   let of_pattern_desc : Shim.Pattern_desc.t -> string = function
@@ -90,6 +95,8 @@ module Language_feature_name = struct
     | Ppat_variant _ -> "polymorphic variant constructor pattern"
     | Ppat_record (_, Closed) -> "closed record pattern"
     | Ppat_record (_, Open) -> "open record pattern"
+    | Ppat_record_unboxed_product (_, Closed) -> "closed unboxed record pattern"
+    | Ppat_record_unboxed_product (_, Open) -> "open unboxed record pattern"
     | Ppat_array (Mutable, _) -> "array pattern"
     | Ppat_array (Immutable, _) -> "immutable array pattern"
     | Ppat_or _ -> "or '|' pattern"
@@ -194,7 +201,9 @@ module Constructor_name = struct
     | Pexp_construct _ -> "Pexp_construct"
     | Pexp_variant _ -> "Pexp_variant"
     | Pexp_record _ -> "Pexp_record"
+    | Pexp_record_unboxed_product _ -> "Pexp_record_unboxed_product"
     | Pexp_field _ -> "Pexp_field"
+    | Pexp_unboxed_field _ -> "Pexp_unboxed_field"
     | Pexp_setfield _ -> "Pexp_setfield"
     | Pexp_array _ -> "Pexp_array"
     | Pexp_ifthenelse _ -> "Pexp_ifthenelse"
@@ -221,6 +230,8 @@ module Constructor_name = struct
     | Pexp_unreachable -> "Pexp_unreachable"
     | Pexp_stack _ -> "Pexp_stack"
     | Pexp_comprehension _ -> "Pexp_comprehension"
+    | Pexp_overwrite _ -> "Pexp_overwrite"
+    | Pexp_hole -> "Pexp_hole"
   ;;
 
   let of_pattern_desc : Shim.Pattern_desc.t -> string = function
@@ -234,6 +245,7 @@ module Constructor_name = struct
     | Ppat_construct _ -> "Ppat_construct"
     | Ppat_variant _ -> "Ppat_variant"
     | Ppat_record _ -> "Ppat_record"
+    | Ppat_record_unboxed_product _ -> "Ppat_record_unboxed_product"
     | Ppat_array _ -> "Ppat_array"
     | Ppat_or _ -> "Ppat_or"
     | Ppat_constraint _ -> "Ppat_constraint"

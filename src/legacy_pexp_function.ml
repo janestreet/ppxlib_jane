@@ -8,18 +8,16 @@ type legacy_pexp_newtype = string loc * expression
 
 type t =
   | Legacy_pexp_fun of legacy_pexp_fun
-  (** Match [Pexp_fun], as in the OCaml parsetree prior to 5.2. To construct,
-      use [Ppxlib.Ast_builder.Default.pexp_fun].
-  *)
+  (** Match [Pexp_fun], as in the OCaml parsetree prior to 5.2. To construct, use
+      [Ppxlib.Ast_builder.Default.pexp_fun]. *)
   | Legacy_pexp_function of legacy_pexp_function
-  (** Match [Pexp_function], as in the OCaml parsetree prior to 5.2. To construct,
-      use [Ppxlib.Ast_builder.Default.pexp_function].
-  *)
+  (** Match [Pexp_function], as in the OCaml parsetree prior to 5.2. To construct, use
+      [Ppxlib.Ast_builder.Default.pexp_function]. *)
   | Legacy_pexp_newtype of legacy_pexp_newtype
 
 let of_pexp_function
   ~(params : Shim.Pexp_function.function_param list)
-  ~(constraint_ : Shim.Pexp_function.function_constraint option)
+  ~(constraint_ : Shim.Pexp_function.Function_constraint.t)
   ~(body : Shim.Pexp_function.function_body)
   =
   match params, body with
@@ -45,17 +43,21 @@ let of_pexp_function
       (* The remaining body is not a valid function, and we just return it directly. *)
       | [], Pfunction_body expr ->
         (match constraint_ with
-         | None -> expr
-         | Some { type_constraint; mode_annotations = _ } ->
+         | c when Shim.Pexp_function.Function_constraint.is_none c -> expr
+         | ({ ret_type_constraint; ret_mode_annotations; mode_annotations = _ } :
+             Shim.Pexp_function.Function_constraint.t) ->
+           let loc = { expr.pexp_loc with loc_ghost = true } in
            let pexp_desc =
-             match type_constraint with
-             | Pcoerce (ty1, ty2) -> Pexp_coerce (expr, ty1, ty2)
-             | Pconstraint ty ->
-               Pexp_constraint (expr, Some ty, []) |> Shim.Expression_desc.to_parsetree
+             match ret_type_constraint with
+             | Some (Pcoerce (ty1, ty2)) -> Pexp_coerce (expr, ty1, ty2)
+             | Some (Pconstraint ty) ->
+               Pexp_constraint (expr, Some ty, ret_mode_annotations)
+               |> Shim.Expression_desc.to_parsetree ~loc
+             | None ->
+               Pexp_constraint (expr, None, ret_mode_annotations)
+               |> Shim.Expression_desc.to_parsetree ~loc
            in
-           Ppxlib_ast.Ast_helper.Exp.mk
-             pexp_desc
-             ~loc:{ expr.pexp_loc with loc_ghost = true })
+           Ppxlib_ast.Ast_helper.Exp.mk pexp_desc ~loc)
     in
     (match first_param with
      | Pparam_val (lbl, opt, pat) -> Legacy_pexp_fun (lbl, opt, pat, body)
