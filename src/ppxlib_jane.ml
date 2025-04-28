@@ -29,7 +29,7 @@ type jkind_annotation_desc = Shim.jkind_annotation_desc =
   | Default
   | Abbreviation of string
   | Mod of Shim.jkind_annotation * Shim.Modes.t
-  | With of Shim.jkind_annotation * Ppxlib_ast.Parsetree.core_type
+  | With of Shim.jkind_annotation * Ppxlib_ast.Parsetree.core_type * Shim.Modalities.t
   | Kind_of of Ppxlib_ast.Parsetree.core_type
   | Product of Shim.jkind_annotation list
 

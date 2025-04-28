@@ -9,7 +9,7 @@ module Default = struct
   include Shim
 
   type function_param = Shim.Pexp_function.function_param
-  type function_constraint = Shim.Pexp_function.function_constraint
+  type function_constraint = Shim.Pexp_function.Function_constraint.t
   type function_body = Shim.Pexp_function.function_body
 
   let mktyp ~loc ?(attrs = []) ptyp_desc =
@@ -53,12 +53,12 @@ module Default = struct
   ;;
 
   let pexp_constraint ~loc a b c =
-    let pexp_desc = Pexp_constraint (a, b, c) |> Shim.Expression_desc.to_parsetree in
+    let pexp_desc = Pexp_constraint (a, b, c) |> Shim.Expression_desc.to_parsetree ~loc in
     mkexp ~loc pexp_desc
   ;;
 
   let ppat_constraint ~loc a b c =
-    let ppat_desc = Ppat_constraint (a, b, c) |> Shim.Pattern_desc.to_parsetree in
+    let ppat_desc = Ppat_constraint (a, b, c) |> Shim.Pattern_desc.to_parsetree ~loc in
     mkpat ~loc ppat_desc
   ;;
 
@@ -70,12 +70,6 @@ module Default = struct
          Shim.Pcstr_tuple_arg.create ~loc ~modalities ~type_))
   ;;
 
-  let pcstr_tuple_no_modalities tys =
-    Pcstr_tuple
-      (List.map tys ~f:(fun type_ ->
-         Shim.Pcstr_tuple_arg.create ~loc:type_.ptyp_loc ~modalities:[] ~type_))
-  ;;
-
   let psig_include ~loc ~modalities a =
     let psig_desc =
       Psig_include (a, modalities) |> Shim.Signature_item_desc.to_parsetree
@@ -83,7 +77,33 @@ module Default = struct
     { psig_loc = loc; psig_desc }
   ;;
 
-  let signature ~loc:_ psg_items = Shim.Signature.to_parsetree { psg_items }
+  let signature ~loc ?(modalities = []) psg_items =
+    Shim.Signature.to_parsetree { psg_items; psg_modalities = modalities; psg_loc = loc }
+  ;;
+
+  let module_declaration ~loc ?(attrs = []) ?(modalities = []) name type_ =
+    Shim.Module_declaration.to_parsetree
+      { pmd_name = name
+      ; pmd_type = type_
+      ; pmd_modalities = modalities
+      ; pmd_attributes = attrs
+      ; pmd_loc = loc
+      }
+  ;;
+
+  let pmty_functor ~loc ?(attrs = []) ?(modes = []) param mty =
+    let pmty_desc =
+      Pmty_functor (param, mty, modes) |> Shim.Module_type_desc.to_parsetree ~loc
+    in
+    { pmty_desc; pmty_attributes = attrs; pmty_loc = loc }
+  ;;
+
+  let pmod_constraint ~loc ?(attrs = []) expr mty modes =
+    let pmod_desc =
+      Pmod_constraint (expr, mty, modes) |> Shim.Module_expr_desc.to_parsetree ~loc
+    in
+    { pmod_desc; pmod_attributes = attrs; pmod_loc = loc }
+  ;;
 
   let pmty_signature ~loc signature =
     { pmty_desc = Pmty_signature signature; pmty_loc = loc; pmty_attributes = [] }
@@ -113,7 +133,7 @@ module Default = struct
     pexp_function
       ~attrs
       ~params:[]
-      ~constraint_:None
+      ~constraint_:Shim.Pexp_function.Function_constraint.none
       ~body:(Pfunction_cases (cases, loc, []))
       ~loc
   ;;
@@ -123,7 +143,10 @@ module Default = struct
   ;;
 
   let function_constraint type_constraint : function_constraint =
-    { type_constraint = Pconstraint type_constraint; mode_annotations = [] }
+    { Shim.Pexp_function.Function_constraint.none with
+      ret_type_constraint =
+        Option.map ~f:(fun x -> Pexp_function.Pconstraint x) type_constraint
+    }
   ;;
 
   let maybe_constrain body return_constraint ~loc =
@@ -165,7 +188,7 @@ module Default = struct
        | None ->
          pexp_function
            ~params:new_params
-           ~constraint_:(Option.map return_constraint ~f:function_constraint)
+           ~constraint_:(function_constraint return_constraint)
            ~body:(Pfunction_body body)
            ~loc
            ~attrs)
@@ -182,8 +205,9 @@ module Default = struct
 
   let coalesce_fun_arity ast =
     match Shim.Pexp_function.of_parsetree ast.pexp_desc ~loc:ast.pexp_loc with
-    | None | Some (_, Some _, _) | Some (_, _, Pfunction_cases _) -> ast
-    | Some (params1, None, Pfunction_body ({ pexp_attributes = []; _ } as outer_body)) ->
+    | None | Some (_, _, Pfunction_cases _) -> ast
+    | Some (_, c, _) when not (Shim.Pexp_function.Function_constraint.is_none c) -> ast
+    | Some (params1, _, Pfunction_body ({ pexp_attributes = []; _ } as outer_body)) ->
       (match
          Shim.Pexp_function.of_parsetree outer_body.pexp_desc ~loc:outer_body.pexp_loc
        with
@@ -206,7 +230,7 @@ module Default = struct
       pexp_function
         ~loc
         ~params
-        ~constraint_:(Option.map return_constraint ~f:function_constraint)
+        ~constraint_:(return_constraint |> function_constraint)
         ~body:(Pfunction_body body)
         ~attrs:[]
   ;;
@@ -223,24 +247,26 @@ module Default = struct
   ;;
 
   let pexp_unboxed_tuple ~loc a =
-    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_unboxed_tuple a) in
+    let pexp_desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_unboxed_tuple a) in
     mkexp ~loc pexp_desc
   ;;
 
   let ppat_unboxed_tuple ~loc a closed =
-    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_unboxed_tuple (a, closed)) in
+    let ppat_desc =
+      Shim.Pattern_desc.to_parsetree ~loc (Ppat_unboxed_tuple (a, closed))
+    in
     mkpat ~loc ppat_desc
   ;;
 
   let exp_constant ~loc c =
     let c = Shim.Constant.to_parsetree c in
-    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_constant c) in
+    let pexp_desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_constant c) in
     mkexp ~loc pexp_desc
   ;;
 
   let pat_constant ~loc c =
     let c = Shim.Constant.to_parsetree c in
-    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_constant c) in
+    let ppat_desc = Shim.Pattern_desc.to_parsetree ~loc (Ppat_constant c) in
     mkpat ~loc ppat_desc
   ;;
 
@@ -267,32 +293,59 @@ module Default = struct
   ;;
 
   let pexp_tuple ~loc ?attrs a =
-    let pexp_desc = Shim.Expression_desc.to_parsetree (Pexp_tuple a) in
+    let pexp_desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_tuple a) in
+    mkexp ?attrs ~loc pexp_desc
+  ;;
+
+  let pexp_record_unboxed_product ~loc ?attrs a b =
+    let pexp_desc =
+      Shim.Expression_desc.to_parsetree ~loc (Pexp_record_unboxed_product (a, b))
+    in
+    mkexp ?attrs ~loc pexp_desc
+  ;;
+
+  let ppat_record_unboxed_product ~loc ?attrs a b =
+    let ppat_desc =
+      Shim.Pattern_desc.to_parsetree ~loc (Ppat_record_unboxed_product (a, b))
+    in
+    mkpat ?attrs ~loc ppat_desc
+  ;;
+
+  let pexp_unboxed_field ~loc ?attrs a b =
+    let pexp_desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_unboxed_field (a, b)) in
     mkexp ?attrs ~loc pexp_desc
   ;;
 
   let ppat_tuple ~loc ?attrs a closed =
-    let ppat_desc = Shim.Pattern_desc.to_parsetree (Ppat_tuple (a, closed)) in
+    let ppat_desc = Shim.Pattern_desc.to_parsetree ~loc (Ppat_tuple (a, closed)) in
     mkpat ?attrs ~loc ppat_desc
   ;;
 
-  let ptyp_poly ~loc ?attrs a b =
-    let desc = Shim.Core_type_desc.to_parsetree (Ptyp_poly (a, b)) in
-    mktyp ?attrs ~loc desc
+  let ptyp_poly ~loc ?(attrs = []) vars body =
+    if List.is_empty vars
+    then
+      { body with
+        ptyp_loc = loc
+      ; ptyp_loc_stack = body.ptyp_loc :: body.ptyp_loc_stack
+      ; ptyp_attributes = body.ptyp_attributes @ attrs
+      }
+    else (
+      let desc = Shim.Core_type_desc.to_parsetree (Ptyp_poly (vars, body)) in
+      mktyp ~attrs ~loc desc)
   ;;
 
   let pexp_newtype ~loc ?attrs a b c =
-    let desc = Shim.Expression_desc.to_parsetree (Pexp_newtype (a, b, c)) in
+    let desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_newtype (a, b, c)) in
     mkexp ?attrs ~loc desc
   ;;
 
   let ppat_array ~loc ?attrs a b =
-    let desc = Shim.Pattern_desc.to_parsetree (Ppat_array (a, b)) in
+    let desc = Shim.Pattern_desc.to_parsetree ~loc (Ppat_array (a, b)) in
     mkpat ?attrs ~loc desc
   ;;
 
   let pexp_array ~loc ?attrs a b =
-    let desc = Shim.Expression_desc.to_parsetree (Pexp_array (a, b)) in
+    let desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_array (a, b)) in
     mkexp ?attrs ~loc desc
   ;;
 end
@@ -330,7 +383,14 @@ struct
 
   let include_infos ?attrs ~kind x = include_infos ~loc ?attrs ~kind x
   let psig_include ~modalities a : signature_item = psig_include ~loc ~modalities a
-  let signature a : signature = signature ~loc a
+  let signature ?modalities a : signature = signature ~loc ?modalities a
+
+  let module_declaration ?attrs ?modalities name type_ =
+    module_declaration ~loc ?attrs ?modalities name type_
+  ;;
+
+  let pmty_functor ?attrs ?modes param mty = pmty_functor ~loc ?attrs ?modes param mty
+  let pmod_constraint ?attrs expr mty modes = pmod_constraint ~loc ?attrs expr mty modes
 
   module Latest = struct
     let pexp_function ?attrs a b c : expression = Latest.pexp_function ~loc ?attrs a b c
@@ -353,6 +413,16 @@ struct
 
   let ptyp_unboxed_tuple a : core_type = ptyp_unboxed_tuple ~loc a
   let pexp_unboxed_tuple a : expression = pexp_unboxed_tuple ~loc a
+
+  let pexp_record_unboxed_product ?attrs a b : expression =
+    pexp_record_unboxed_product ~loc ?attrs a b
+  ;;
+
+  let ppat_record_unboxed_product ?attrs a b : pattern =
+    ppat_record_unboxed_product ~loc ?attrs a b
+  ;;
+
+  let pexp_unboxed_field ?attrs a b : expression = pexp_unboxed_field ~loc ?attrs a b
   let ppat_unboxed_tuple a b : pattern = ppat_unboxed_tuple ~loc a b
   let eint64_u c : expression = eint64_u ~loc c
   let eint32_u c : expression = eint32_u ~loc c

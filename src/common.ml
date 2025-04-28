@@ -23,3 +23,27 @@ let as_unlabeled_tuple components =
   then Some (List.map snd components)
   else None
 ;;
+
+let mangle_longident ~suffix : Longident.t -> Longident.t = function
+  | Lident name -> Lident (name ^ suffix)
+  | Ldot (path, name) -> Ldot (path, name ^ suffix)
+  | Lapply _ as longident -> longident
+;;
+
+let localize_longident = mangle_longident ~suffix:"__local"
+
+let localize_include_sig incl =
+  { incl with
+    pincl_mod =
+      { incl.pincl_mod with
+        pmty_desc =
+          (match incl.pincl_mod.pmty_desc with
+           | Pmty_ident { txt; loc } -> Pmty_ident { txt = localize_longident txt; loc }
+           | Pmty_with (({ pmty_desc = Pmty_ident { txt; loc }; _ } as mty), cstrs) ->
+             Pmty_with
+               ( { mty with pmty_desc = Pmty_ident { txt = localize_longident txt; loc } }
+               , cstrs )
+           | _ -> failwith "expected [include S] or [include S with ...]")
+      }
+  }
+;;

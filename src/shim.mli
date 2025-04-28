@@ -24,12 +24,12 @@ module Include_kind : sig
 end
 
 (** Function arguments; a value of this type represents:
-    - [arg_mode arg_type -> ...] when [arg_label] is
-      {{!Asttypes.arg_label.Nolabel}[Nolabel]},
-    - [l:arg_mode arg_type -> ...] when [arg_label] is
-      {{!Asttypes.arg_label.Labelled}[Labelled]}, and
-    - [?l:arg_mode arg_type -> ...] when [arg_label] is
-      {{!Asttypes.arg_label.Optional}[Optional]}. *)
+    - [arg_mode arg_type -> ...] when [arg_label] is {{!Asttypes.arg_label.Nolabel}
+      [Nolabel]},
+    - [l:arg_mode arg_type -> ...] when [arg_label] is {{!Asttypes.arg_label.Labelled}
+      [Labelled]}, and
+    - [?l:arg_mode arg_type -> ...] when [arg_label] is {{!Asttypes.arg_label.Optional}
+      [Optional]}. *)
 type arrow_argument =
   { arg_label : arg_label
   ; arg_modes : Modes.t
@@ -94,6 +94,19 @@ module Value_description : sig
     -> value_description
 end
 
+module Module_declaration : sig
+  type t =
+    { pmd_name : string option loc
+    ; pmd_type : module_type
+    ; pmd_modalities : Modalities.t
+    ; pmd_attributes : attributes (** [... [\@\@id1] [\@\@id2]] *)
+    ; pmd_loc : Location.t
+    }
+
+  val to_parsetree : t -> module_declaration
+  val of_parsetree : module_declaration -> t
+end
+
 module Value_binding : sig
   val extract_modes : value_binding -> Modes.t * value_binding
 
@@ -109,7 +122,7 @@ type jkind_annotation_desc =
   | Default
   | Abbreviation of string
   | Mod of jkind_annotation * Modes.t
-  | With of jkind_annotation * core_type
+  | With of jkind_annotation * core_type * Modality.t loc list
   | Kind_of of core_type
   | Product of jkind_annotation list
 
@@ -150,10 +163,16 @@ module Pexp_function : sig
     | Pconstraint of core_type
     | Pcoerce of core_type option * core_type
 
-  type function_constraint =
-    { mode_annotations : Modes.t
-    ; type_constraint : type_constraint
-    }
+  module Function_constraint : sig
+    type t =
+      { mode_annotations : Modes.t
+      ; ret_mode_annotations : Modes.t
+      ; ret_type_constraint : type_constraint option
+      }
+
+    val none : t
+    val is_none : t -> bool
+  end
 
   type function_body =
     | Pfunction_body of expression
@@ -161,14 +180,14 @@ module Pexp_function : sig
 
   val to_parsetree
     :  params:function_param list
-    -> constraint_:function_constraint option
+    -> constraint_:Function_constraint.t
     -> body:function_body
     -> expression_desc
 
   val of_parsetree
     :  expression_desc
     -> loc:Location.t
-    -> (function_param list * function_constraint option * function_body) option
+    -> (function_param list * Function_constraint.t * function_body) option
 end
 
 module Core_type_desc : sig
@@ -215,6 +234,7 @@ module Pattern_desc : sig
     | Ppat_construct of Longident.t loc * (string loc list * pattern) option
     | Ppat_variant of label * pattern option
     | Ppat_record of (Longident.t loc * pattern) list * closed_flag
+    | Ppat_record_unboxed_product of (Longident.t loc * pattern) list * closed_flag
     | Ppat_array of mutable_flag * pattern list
     | Ppat_or of pattern * pattern
     | Ppat_constraint of pattern * core_type option * Modes.t
@@ -226,7 +246,7 @@ module Pattern_desc : sig
     | Ppat_open of Longident.t loc * pattern
 
   val of_parsetree : pattern_desc -> t
-  val to_parsetree : t -> pattern_desc
+  val to_parsetree : loc:Location.t -> t -> pattern_desc
 end
 
 module Expression_desc : sig
@@ -240,7 +260,7 @@ module Expression_desc : sig
     | Pexp_let of rec_flag * value_binding list * expression
     | Pexp_function of
         Pexp_function.function_param list
-        * Pexp_function.function_constraint option
+        * Pexp_function.Function_constraint.t
         * Pexp_function.function_body
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
@@ -250,7 +270,10 @@ module Expression_desc : sig
     | Pexp_construct of Longident.t loc * expression option
     | Pexp_variant of label * expression option
     | Pexp_record of (Longident.t loc * expression) list * expression option
+    | Pexp_record_unboxed_product of
+        (Longident.t loc * expression) list * expression option
     | Pexp_field of expression * Longident.t loc
+    | Pexp_unboxed_field of expression * Longident.t loc
     | Pexp_setfield of expression * Longident.t loc * expression
     | Pexp_array of mutable_flag * expression list
     | Pexp_ifthenelse of expression * expression * expression option
@@ -277,9 +300,23 @@ module Expression_desc : sig
     | Pexp_unreachable
     | Pexp_stack of expression
     | Pexp_comprehension of comprehension_expression
+    | Pexp_overwrite of expression * expression
+    | Pexp_hole
 
   val of_parsetree : expression_desc -> loc:Location.t -> t
-  val to_parsetree : t -> expression_desc
+  val to_parsetree : loc:Location.t -> t -> expression_desc
+end
+
+module Type_kind : sig
+  type t =
+    | Ptype_abstract
+    | Ptype_variant of constructor_declaration list
+    | Ptype_record of label_declaration list
+    | Ptype_record_unboxed_product of label_declaration list
+    | Ptype_open
+
+  val of_parsetree : type_kind -> t
+  val to_parsetree : t -> type_kind
 end
 
 module Include_infos : sig
@@ -319,7 +356,11 @@ module Signature_item_desc : sig
 end
 
 module Signature : sig
-  type t = { psg_items : signature_item list }
+  type t =
+    { psg_modalities : Modalities.t
+    ; psg_items : signature_item list
+    ; psg_loc : Location.t
+    }
 
   val of_parsetree : signature -> t
   val to_parsetree : t -> signature
@@ -348,11 +389,20 @@ module Structure_item_desc : sig
   val to_parsetree : t -> structure_item_desc
 end
 
+module Functor_parameter : sig
+  type t =
+    | Unit
+    | Named of string option loc * module_type * Modes.t
+
+  val to_parsetree : t -> functor_parameter
+  val of_parsetree : functor_parameter -> t
+end
+
 module Module_type_desc : sig
   type t =
     | Pmty_ident of Longident.t loc
     | Pmty_signature of signature
-    | Pmty_functor of functor_parameter * module_type
+    | Pmty_functor of functor_parameter * module_type * Modes.t
     | Pmty_with of module_type * with_constraint list
     | Pmty_typeof of module_expr
     | Pmty_extension of extension
@@ -360,7 +410,7 @@ module Module_type_desc : sig
     | Pmty_strengthen of module_type * Longident.t loc
 
   val of_parsetree : module_type_desc -> t
-  val to_parsetree : t -> module_type_desc
+  val to_parsetree : loc:Location.t -> t -> module_type_desc
 end
 
 module Module_expr_desc : sig
@@ -371,13 +421,13 @@ module Module_expr_desc : sig
     | Pmod_structure of structure
     | Pmod_functor of functor_parameter * module_expr
     | Pmod_apply of module_expr * module_expr
-    | Pmod_constraint of module_expr * module_type
+    | Pmod_constraint of module_expr * module_type option * Modes.t
     | Pmod_unpack of expression
     | Pmod_extension of extension
     | Pmod_instance of module_instance
 
   val of_parsetree : module_expr_desc -> t
-  val to_parsetree : t -> module_expr_desc
+  val to_parsetree : loc:Location.t -> t -> module_expr_desc
 end
 
 module Ast_traverse : sig
@@ -390,10 +440,12 @@ module Ast_traverse : sig
       method function_body : Pexp_function.function_body T.t
       method function_param : Pexp_function.function_param T.t
       method function_param_desc : Pexp_function.function_param_desc T.t
-      method function_constraint : Pexp_function.function_constraint T.t
+      method function_constraint : Pexp_function.Function_constraint.t T.t
       method type_constraint : Pexp_function.type_constraint T.t
-      method modes : Modes.t T.t
       method mode : Mode.t T.t
+      method modes : Modes.t T.t
+      method modality : Modality.t T.t
+      method modalities : Modalities.t T.t
       method signature_items : signature_item list T.t
     end
   end
@@ -407,10 +459,12 @@ module Ast_traverse : sig
       method function_body : ('ctx, Pexp_function.function_body) T.t
       method function_param : ('ctx, Pexp_function.function_param) T.t
       method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
-      method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
+      method function_constraint : ('ctx, Pexp_function.Function_constraint.t) T.t
       method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
-      method modes : ('ctx, Modes.t) T.t
       method mode : ('ctx, Mode.t) T.t
+      method modes : ('ctx, Modes.t) T.t
+      method modality : ('ctx, Modality.t) T.t
+      method modalities : ('ctx, Modalities.t) T.t
       method signature_items : ('ctx, signature_item list) T.t
     end
   end

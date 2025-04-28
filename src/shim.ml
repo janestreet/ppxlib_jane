@@ -76,6 +76,30 @@ module Value_description = struct
   ;;
 end
 
+module Module_declaration = struct
+  type t =
+    { pmd_name : string option loc
+    ; pmd_type : module_type
+    ; pmd_modalities : Modalities.t
+    ; pmd_attributes : attributes (** [... [\@\@id1] [\@\@id2]] *)
+    ; pmd_loc : Location.t
+    }
+
+  let to_parsetree
+    ({ pmd_name; pmd_type; pmd_attributes; pmd_loc; pmd_modalities = _ } : t)
+    : module_declaration
+    =
+    { pmd_name; pmd_type; pmd_attributes; pmd_loc }
+  ;;
+
+  let of_parsetree ({ pmd_name; pmd_type; pmd_attributes; pmd_loc } : module_declaration)
+    : t
+    =
+    let pmd_modalities = [] in
+    { pmd_name; pmd_type; pmd_attributes; pmd_loc; pmd_modalities }
+  ;;
+end
+
 module Value_binding = struct
   let extract_modes vb = [], vb
 
@@ -89,7 +113,7 @@ module T = struct
     | Default
     | Abbreviation of string
     | Mod of jkind_annotation * Modes.t
-    | With of jkind_annotation * core_type
+    | With of jkind_annotation * core_type * Modalities.t
     | Kind_of of core_type
     | Product of jkind_annotation list
 
@@ -146,16 +170,35 @@ module Pexp_function = struct
     | Pconstraint of core_type
     | Pcoerce of core_type option * core_type
 
-  type function_constraint =
-    { mode_annotations : Modes.t
-    ; type_constraint : type_constraint
-    }
+  module Function_constraint = struct
+    type t =
+      { mode_annotations : Modes.t
+      ; ret_mode_annotations : Modes.t
+      ; ret_type_constraint : type_constraint option
+      }
+
+    let none =
+      { mode_annotations = []; ret_mode_annotations = []; ret_type_constraint = None }
+    ;;
+
+    let is_none { ret_mode_annotations; ret_type_constraint; _ } =
+      match ret_mode_annotations, ret_type_constraint with
+      | [], None -> true
+      | _, _ -> false
+    ;;
+  end
 
   type function_body =
     | Pfunction_body of expression
     | Pfunction_cases of case list * Location.t * attributes
 
-  let to_parsetree ~params ~constraint_ ~body =
+  let to_parsetree
+    ~params
+    ~constraint_:
+      ({ mode_annotations = _; ret_mode_annotations = _; ret_type_constraint } :
+        Function_constraint.t)
+    ~body
+    =
     let body =
       match body with
       | Pfunction_body body -> body
@@ -163,12 +206,12 @@ module Pexp_function = struct
         Ast_helper.Exp.function_ cases ~loc ~attrs:pexp_attributes
     in
     let body =
-      match constraint_ with
+      match ret_type_constraint with
       | None -> body
-      | Some { type_constraint = Pconstraint ty; _ } ->
+      | Some (Pconstraint ty) ->
         let body_loc = { body.pexp_loc with loc_ghost = true } in
         Ast_helper.Exp.constraint_ body ty ~loc:body_loc
-      | Some { type_constraint = Pcoerce (ty1, ty2); _ } ->
+      | Some (Pcoerce (ty1, ty2)) ->
         let body_loc = { body.pexp_loc with loc_ghost = true } in
         Ast_helper.Exp.coerce body ty1 ty2 ~loc:body_loc
     in
@@ -199,10 +242,8 @@ module Pexp_function = struct
       | [], _, Pfunction_body _ -> None
       | [], Some _, Pfunction_cases _ -> None
       | rev_params, constraint_, body ->
-        let constraint_ : function_constraint option =
-          match constraint_ with
-          | None -> None
-          | Some type_constraint -> Some { mode_annotations = []; type_constraint }
+        let constraint_ : Function_constraint.t =
+          { Function_constraint.none with ret_type_constraint = constraint_ }
         in
         Some (List.rev rev_params, constraint_, body)
     in
@@ -233,7 +274,8 @@ module Pexp_function = struct
     in
     fun expr_desc ~loc ->
       match expr_desc with
-      | Pexp_function cases -> Some ([], None, Pfunction_cases (cases, loc, []))
+      | Pexp_function cases ->
+        Some ([], Function_constraint.none, Pfunction_cases (cases, loc, []))
       | _ -> loop_expr_desc expr_desc ~rev_params:[] ~containing_expr:None
   ;;
 end
@@ -254,6 +296,8 @@ let as_unlabeled_tuple components =
   then Some (List.map snd components)
   else None
 ;;
+
+let as_unlabeled_tuple_unconditionally components = List.map snd components
 
 module Core_type_desc = struct
   type t =
@@ -307,20 +351,10 @@ module Core_type_desc = struct
     | Ptyp_alias (a, Some b, _) -> Ptyp_alias (a, b.txt)
     | Ptyp_alias (a, None, _) -> Ptyp_alias (a, fresh_name "_alias")
     | Ptyp_tuple labeled_typs ->
-      (match as_unlabeled_tuple labeled_typs with
-       | Some typs -> Ptyp_tuple typs
-       | None ->
-         failwith
-           "[Ptyp_tuple], when labels are present, is not a legal [core_type_desc] in \
-            your parsetree")
+      Ptyp_tuple (as_unlabeled_tuple_unconditionally labeled_typs)
     (* new constructors *)
     | Ptyp_unboxed_tuple labeled_typs ->
-      (match as_unlabeled_tuple labeled_typs with
-       | Some typs -> Ptyp_tuple typs
-       | None ->
-         failwith
-           "[Ptyp_unboxed_tuple], when labels are present, is not a legal \
-            [core_type_desc] in your parsetree")
+      Ptyp_tuple (as_unlabeled_tuple_unconditionally labeled_typs)
     (* unchanged constructors *)
     | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
     | Ptyp_object (a, b) -> Ptyp_object (a, b)
@@ -364,6 +398,7 @@ module Pattern_desc = struct
     | Ppat_construct of Longident.t loc * (string loc list * pattern) option
     | Ppat_variant of label * pattern option
     | Ppat_record of (Longident.t loc * pattern) list * closed_flag
+    | Ppat_record_unboxed_product of (Longident.t loc * pattern) list * closed_flag
     | Ppat_array of mutable_flag * pattern list
     | Ppat_or of pattern * pattern
     | Ppat_constraint of pattern * core_type option * Modes.t
@@ -397,36 +432,42 @@ module Pattern_desc = struct
     | Ppat_open (a, b) -> Ppat_open (a, b)
   ;;
 
-  let to_parsetree : t -> pattern_desc = function
+  let to_parsetree : loc:Location.t -> t -> pattern_desc =
+    fun ~loc -> function
     (* changed constructors *)
     | Ppat_constraint (a, Some b, _) -> Ppat_constraint (a, b)
     | Ppat_constraint (a, None, _) -> Ppat_constraint (a, ptyp_any)
     | Ppat_tuple (_, Open) ->
-      failwith
-        "[Ppat_tuple] with an \"open\" pattern is not a legal [pattern_desc] in your \
-         parsetree"
+      Location.raise_errorf
+        ~loc
+        "[Ppat_tuple] with an \"open\" pattern cannot be converted to an upstream \
+         [pattern_desc]"
     | Ppat_tuple (labeled_pats, Closed) ->
       (match as_unlabeled_tuple labeled_pats with
        | Some pats -> Ppat_tuple pats
        | None ->
          failwith
-           "[Ppat_tuple], when labels are present, is not a legal [pattern_desc] in your \
-            parsetree")
+           "[Ppat_tuple], when labels are present, cannot be converted to an upstream \
+            [pattern_desc]")
     | Ppat_array (Mutable, a) -> Ppat_array a
     | Ppat_array (Immutable, _) ->
-      failwith "Immutable [Ppat_array] is not a legal [pattern_desc] in your parsetree"
+      Location.raise_errorf
+        ~loc
+        "Immutable [Ppat_array] cannot be converted to an usptream [pattern_desc]"
     (* new constructors *)
     | Ppat_unboxed_tuple (_, Open) ->
-      failwith
-        "[Ppat_unboxed_tuple] with an \"open\" pattern is not a legal [pattern_desc] in \
-         your parsetree"
-    | Ppat_unboxed_tuple (labeled_pats, Closed) ->
+      Location.raise_errorf
+        ~loc
+        "[Ppat_unboxed_tuple] with an \"open\" pattern cannot be converted to an \
+         upstream [pattern_desc]"
+    | Ppat_tuple (labeled_pats, Closed) ->
       (match as_unlabeled_tuple labeled_pats with
        | Some pats -> Ppat_tuple pats
        | None ->
          failwith
-           "[Ppat_unboxed_tuple], when labels are present, is not a legal [pattern_desc] \
-            in your parsetree")
+           "[Ppat_unboxed_tuple], when labels are present, cannot be converted to an \
+            upstream [pattern_desc]")
+    | Ppat_record_unboxed_product (a, b) -> Ppat_record (a, b)
     (* unchanged constructors *)
     | Ppat_any -> Ppat_any
     | Ppat_var a -> Ppat_var a
@@ -457,7 +498,7 @@ module Expression_desc = struct
     | Pexp_let of rec_flag * value_binding list * expression
     | Pexp_function of
         Pexp_function.function_param list
-        * Pexp_function.function_constraint option
+        * Pexp_function.Function_constraint.t
         * Pexp_function.function_body
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
@@ -467,7 +508,10 @@ module Expression_desc = struct
     | Pexp_construct of Longident.t loc * expression option
     | Pexp_variant of label * expression option
     | Pexp_record of (Longident.t loc * expression) list * expression option
+    | Pexp_record_unboxed_product of
+        (Longident.t loc * expression) list * expression option
     | Pexp_field of expression * Longident.t loc
+    | Pexp_unboxed_field of expression * Longident.t loc
     | Pexp_setfield of expression * Longident.t loc * expression
     | Pexp_array of mutable_flag * expression list
     | Pexp_ifthenelse of expression * expression * expression option
@@ -494,33 +538,29 @@ module Expression_desc = struct
     | Pexp_unreachable
     | Pexp_stack of expression
     | Pexp_comprehension of comprehension_expression
+    | Pexp_overwrite of expression * expression
+    | Pexp_hole
 
-  let to_parsetree : t -> expression_desc = function
+  let to_parsetree : loc:Location.t -> t -> expression_desc =
+    fun ~loc -> function
     (* changed constructors *)
     | Pexp_function (x1, x2, x3) ->
       Pexp_function.to_parsetree ~params:x1 ~constraint_:x2 ~body:x3
     | Pexp_constraint (x1, Some x2, _) -> Pexp_constraint (x1, x2)
     | Pexp_constraint (x1, None, _) -> Pexp_constraint (x1, ptyp_any)
     | Pexp_tuple labeled_exps ->
-      (match as_unlabeled_tuple labeled_exps with
-       | Some exps -> Pexp_tuple exps
-       | None ->
-         failwith
-           "[Pexp_tuple], when labels are present, is not a legal [expression_desc] in \
-            your parsetree")
+      Pexp_tuple (as_unlabeled_tuple_unconditionally labeled_exps)
     | Pexp_newtype (x1, _, x2) -> Pexp_newtype (x1, x2)
     | Pexp_array (Mutable, x) -> Pexp_array x
     | Pexp_array (Immutable, _) ->
-      failwith
-        "Immutable [Pexp_array] is not a legal [expression_desc] in your parsetree."
+      Location.raise_errorf
+        ~loc
+        "Immutable [Pexp_array] cannot be converted to an upstream [expression_desc]"
+    | Pexp_record_unboxed_product (x1, x2) -> Pexp_record (x1, x2)
+    | Pexp_unboxed_field (x1, x2) -> Pexp_field (x1, x2)
     (* new constructors *)
     | Pexp_unboxed_tuple labeled_exps ->
-      (match as_unlabeled_tuple labeled_exps with
-       | Some exps -> Pexp_tuple exps
-       | None ->
-         failwith
-           "[Pexp_unboxed_tuple], when labels are present, is not a legal \
-            [expression_desc] in your parsetree")
+      Pexp_tuple (as_unlabeled_tuple_unconditionally labeled_exps)
     (* unchanged constructors *)
     | Pexp_ident x -> Pexp_ident x
     | Pexp_constant x -> Pexp_constant x
@@ -553,10 +593,29 @@ module Expression_desc = struct
     | Pexp_letop x -> Pexp_letop x
     | Pexp_extension x -> Pexp_extension x
     | Pexp_unreachable -> Pexp_unreachable
-    | Pexp_stack _ ->
-      failwith "[Pexp_stack] is not a legal [expression_desc] in your parsetree"
+    | Pexp_stack { pexp_desc; pexp_attributes; pexp_loc = _; pexp_loc_stack = _ } ->
+      (match pexp_attributes with
+       | [] -> pexp_desc
+       | _ :: _ ->
+         Location.raise_errorf
+           ~loc
+           "[Pexp_stack] cannot be converted to an upstream [expression_desc] without \
+            erasing attributes")
     | Pexp_comprehension _ ->
-      failwith "[Pexp_comprehension] is not a legal [expression_desc] in your parsetree"
+      Location.raise_errorf
+        ~loc
+        "[Pexp_comprehension] cannot be converted to an upstream [expression_desc]"
+    | Pexp_overwrite _ ->
+      Location.raise_errorf
+        ~loc
+        "[Pexp_overwrite] cannot be converted to an upstream [expression_desc]"
+    | Pexp_hole ->
+      Pexp_assert
+        { pexp_desc = Pexp_construct ({ loc; txt = Lident "false" }, None)
+        ; pexp_loc = loc
+        ; pexp_loc_stack = []
+        ; pexp_attributes = []
+        }
   ;;
 
   let of_parsetree (expr_desc : expression_desc) ~loc : t =
@@ -607,6 +666,30 @@ module Expression_desc = struct
   ;;
 end
 
+module Type_kind = struct
+  type t =
+    | Ptype_abstract
+    | Ptype_variant of constructor_declaration list
+    | Ptype_record of label_declaration list
+    | Ptype_record_unboxed_product of label_declaration list
+    | Ptype_open
+
+  let of_parsetree : type_kind -> t = function
+    | Ptype_abstract -> Ptype_abstract
+    | Ptype_variant x -> Ptype_variant x
+    | Ptype_record x -> Ptype_record x
+    | Ptype_open -> Ptype_open
+  ;;
+
+  let to_parsetree : t -> type_kind = function
+    | Ptype_abstract -> Ptype_abstract
+    | Ptype_variant x -> Ptype_variant x
+    | Ptype_record x -> Ptype_record x
+    | Ptype_record_unboxed_product x -> Ptype_record x
+    | Ptype_open -> Ptype_open
+  ;;
+end
+
 module Include_infos = struct
   type 'a t =
     { pincl_kind : Include_kind.t
@@ -625,7 +708,10 @@ module Include_infos = struct
     let ({ pincl_kind; pincl_mod; pincl_loc; pincl_attributes } : 'a t) = x in
     match pincl_kind with
     | Structure -> { pincl_mod; pincl_loc; pincl_attributes }
-    | Functor -> failwith "[include functor] is not legal in your parsetree"
+    | Functor ->
+      Location.raise_errorf
+        ~loc:pincl_loc
+        "[include functor] cannot be converted to an upstream [include_infos]"
   ;;
 end
 
@@ -682,13 +768,7 @@ module Signature_item_desc = struct
     | Psig_modtype a -> Psig_modtype a
     | Psig_modtypesubst a -> Psig_modtypesubst a
     | Psig_open a -> Psig_open a
-    | Psig_include (a, b) ->
-      if List.is_empty b
-      then Psig_include a
-      else
-        failwith
-          "[Psig_include] with modalities is not a legal [signature_item_desc] in your \
-           parsetree"
+    | Psig_include (a, _) -> Psig_include a
     | Psig_class a -> Psig_class a
     | Psig_class_type a -> Psig_class_type a
     | Psig_attribute a -> Psig_attribute a
@@ -708,10 +788,14 @@ module Signature_item_desc = struct
 end
 
 module Signature = struct
-  type t = { psg_items : signature_item list }
+  type t =
+    { psg_modalities : Modalities.t
+    ; psg_items : signature_item list
+    ; psg_loc : Location.t
+    }
 
-  let of_parsetree psg_items = { psg_items }
-  let to_parsetree { psg_items } = psg_items
+  let of_parsetree psg_items = { psg_items; psg_modalities = []; psg_loc = Location.none }
+  let to_parsetree { psg_items; psg_modalities = _; psg_loc = _ } = psg_items
 end
 
 module Structure_item_desc = struct
@@ -781,11 +865,29 @@ module Structure_item_desc = struct
   ;;
 end
 
+module Functor_parameter = struct
+  type t =
+    | Unit
+    | Named of string option loc * module_type * Modes.t
+
+  let to_parsetree (t : t) : functor_parameter =
+    match t with
+    | Unit -> Unit
+    | Named (name, type_, _) -> Named (name, type_)
+  ;;
+
+  let of_parsetree (t : functor_parameter) : t =
+    match t with
+    | Unit -> Unit
+    | Named (name, type_) -> Named (name, type_, [])
+  ;;
+end
+
 module Module_type_desc = struct
   type t =
     | Pmty_ident of Longident.t loc
     | Pmty_signature of signature
-    | Pmty_functor of functor_parameter * module_type
+    | Pmty_functor of functor_parameter * module_type * Modes.t
     | Pmty_with of module_type * with_constraint list
     | Pmty_typeof of module_expr
     | Pmty_extension of extension
@@ -795,21 +897,24 @@ module Module_type_desc = struct
   let of_parsetree : module_type_desc -> t = function
     | Pmty_ident x -> Pmty_ident x
     | Pmty_signature x -> Pmty_signature x
-    | Pmty_functor (x0, x1) -> Pmty_functor (x0, x1)
+    | Pmty_functor (x0, x1) -> Pmty_functor (x0, x1, [])
     | Pmty_with (x0, x1) -> Pmty_with (x0, x1)
     | Pmty_typeof x -> Pmty_typeof x
     | Pmty_extension x -> Pmty_extension x
     | Pmty_alias x -> Pmty_alias x
   ;;
 
-  let to_parsetree : t -> module_type_desc = function
+  let to_parsetree : loc:Location.t -> t -> module_type_desc =
+    fun ~loc -> function
     (* new constructors *)
     | Pmty_strengthen _ ->
-      failwith "[Pmty_strengthen] is not a legal [module_type_desc] in your parsetree"
+      Location.raise_errorf
+        ~loc
+        "[Pmty_strengthen] cannot be converted to an upstream [module_type_desc]"
     (* unchanged constructors *)
     | Pmty_ident x -> Pmty_ident x
     | Pmty_signature x -> Pmty_signature x
-    | Pmty_functor (x0, x1) -> Pmty_functor (x0, x1)
+    | Pmty_functor (x0, x1, _) -> Pmty_functor (x0, x1)
     | Pmty_with (x0, x1) -> Pmty_with (x0, x1)
     | Pmty_typeof x -> Pmty_typeof x
     | Pmty_extension x -> Pmty_extension x
@@ -825,7 +930,7 @@ module Module_expr_desc = struct
     | Pmod_structure of structure
     | Pmod_functor of functor_parameter * module_expr
     | Pmod_apply of module_expr * module_expr
-    | Pmod_constraint of module_expr * module_type
+    | Pmod_constraint of module_expr * module_type option * Modes.t
     | Pmod_unpack of expression
     | Pmod_extension of extension
     | Pmod_instance of module_instance
@@ -835,21 +940,34 @@ module Module_expr_desc = struct
     | Pmod_structure x -> Pmod_structure x
     | Pmod_functor (x0, x1) -> Pmod_functor (x0, x1)
     | Pmod_apply (x0, x1) -> Pmod_apply (x0, x1)
-    | Pmod_constraint (x0, x1) -> Pmod_constraint (x0, x1)
+    | Pmod_constraint (x0, x1) -> Pmod_constraint (x0, Some x1, [])
     | Pmod_unpack x -> Pmod_unpack x
     | Pmod_extension x -> Pmod_extension x
   ;;
 
-  let to_parsetree : t -> module_expr_desc = function
+  let to_parsetree : loc:Location.t -> t -> module_expr_desc =
+    fun ~loc -> function
     (* new constructors *)
     | Pmod_instance _ ->
-      failwith "[Pmod_instance] is not a legal [module_expr_desc] in your parsetree"
+      Location.raise_errorf
+        ~loc
+        "[Pmod_instance] cannot be converted to an upstream [module_expr_desc]"
     (* unchanged constructors *)
     | Pmod_ident x -> Pmod_ident x
     | Pmod_structure x -> Pmod_structure x
     | Pmod_functor (x0, x1) -> Pmod_functor (x0, x1)
     | Pmod_apply (x0, x1) -> Pmod_apply (x0, x1)
-    | Pmod_constraint (x0, x1) -> Pmod_constraint (x0, x1)
+    | Pmod_constraint (x0, x1, _) ->
+      (match x1 with
+       | Some x1 -> Pmod_constraint (x0, x1)
+       | None ->
+         (match x0 with
+          | { pmod_desc; pmod_loc = _; pmod_attributes = [] } -> pmod_desc
+          | { pmod_attributes = _ :: _; _ } ->
+            Location.raise_errorf
+              ~loc
+              "[Pmod_constraint] without type cannot be converted to an upstream \
+               [module_expr_desc] without erasing attributes"))
     | Pmod_unpack x -> Pmod_unpack x
     | Pmod_extension x -> Pmod_extension x
   ;;
@@ -863,7 +981,7 @@ module Ast_traverse = struct
       | Default
       | Abbreviation of string
       | Mod of jkind_annotation * modes
-      | With of jkind_annotation * core_type
+      | With of jkind_annotation * core_type * modalities
       | Kind_of of core_type
       | Product of jkind_annotation list
 
@@ -885,9 +1003,10 @@ module Ast_traverse = struct
       | Pconstraint of core_type
       | Pcoerce of core_type option * core_type
 
-    and function_constraint = Pexp_function.function_constraint =
+    and function_constraint = Pexp_function.Function_constraint.t =
       { mode_annotations : modes
-      ; type_constraint : type_constraint
+      ; ret_mode_annotations : modes
+      ; ret_type_constraint : type_constraint option
       }
 
     and function_body = Pexp_function.function_body =
@@ -896,6 +1015,8 @@ module Ast_traverse = struct
 
     and mode = Mode.t = Mode of string [@@unboxed]
     and modes = mode loc list
+    and modality = Modality.t = Modality of string [@@unboxed]
+    and modalities = modality loc list
     and signature_items = signature_item list
     and signature = signature_items [@@deriving_inline traverse]
 
@@ -925,10 +1046,11 @@ module Ast_traverse = struct
               let a = self#jkind_annotation a in
               let b = self#modes b in
               Mod (a, b)
-            | With (a, b) ->
+            | With (a, b, c) ->
               let a = self#jkind_annotation a in
               let b = self#core_type b in
-              With (a, b)
+              let c = self#modalities c in
+              With (a, b, c)
             | Kind_of a ->
               let a = self#core_type a in
               Kind_of a
@@ -973,10 +1095,13 @@ module Ast_traverse = struct
               Pcoerce (a, b)
 
         method function_constraint : function_constraint -> function_constraint =
-          fun { mode_annotations; type_constraint } ->
+          fun { mode_annotations; ret_mode_annotations; ret_type_constraint } ->
             let mode_annotations = self#modes mode_annotations in
-            let type_constraint = self#type_constraint type_constraint in
-            { mode_annotations; type_constraint }
+            let ret_mode_annotations = self#modes ret_mode_annotations in
+            let ret_type_constraint =
+              self#option self#type_constraint ret_type_constraint
+            in
+            { mode_annotations; ret_mode_annotations; ret_type_constraint }
 
         method function_body : function_body -> function_body =
           fun x ->
@@ -998,6 +1123,15 @@ module Ast_traverse = struct
               Mode a
 
         method modes : modes -> modes = self#list (self#loc self#mode)
+
+        method modality : modality -> modality =
+          fun x ->
+            match x with
+            | Modality a ->
+              let a = self#string a in
+              Modality a
+
+        method modalities : modalities -> modalities = self#list (self#loc self#modality)
 
         method signature_items : signature_items -> signature_items =
           self#list self#signature_item
@@ -1028,9 +1162,10 @@ module Ast_traverse = struct
             | Mod (a, b) ->
               self#jkind_annotation a;
               self#modes b
-            | With (a, b) ->
+            | With (a, b, c) ->
               self#jkind_annotation a;
-              self#core_type b
+              self#core_type b;
+              self#modalities c
             | Kind_of a -> self#core_type a
             | Product a -> self#list self#jkind_annotation a
 
@@ -1064,9 +1199,10 @@ module Ast_traverse = struct
               self#core_type b
 
         method function_constraint : function_constraint -> unit =
-          fun { mode_annotations; type_constraint } ->
+          fun { mode_annotations; ret_mode_annotations; ret_type_constraint } ->
             self#modes mode_annotations;
-            self#type_constraint type_constraint
+            self#modes ret_mode_annotations;
+            self#option self#type_constraint ret_type_constraint
 
         method function_body : function_body -> unit =
           fun x ->
@@ -1083,6 +1219,13 @@ module Ast_traverse = struct
             | Mode a -> self#string a
 
         method modes : modes -> unit = self#list (self#loc self#mode)
+
+        method modality : modality -> unit =
+          fun x ->
+            match x with
+            | Modality a -> self#string a
+
+        method modalities : modalities -> unit = self#list (self#loc self#modality)
         method signature_items : signature_items -> unit = self#list self#signature_item
         method signature : signature -> unit = self#signature_items
       end
@@ -1111,9 +1254,10 @@ module Ast_traverse = struct
               let acc = self#jkind_annotation a acc in
               let acc = self#modes b acc in
               acc
-            | With (a, b) ->
+            | With (a, b, c) ->
               let acc = self#jkind_annotation a acc in
               let acc = self#core_type b acc in
+              let acc = self#modalities c acc in
               acc
             | Kind_of a -> self#core_type a acc
             | Product a -> self#list self#jkind_annotation a acc
@@ -1153,9 +1297,10 @@ module Ast_traverse = struct
               acc
 
         method function_constraint : function_constraint -> 'acc -> 'acc =
-          fun { mode_annotations; type_constraint } acc ->
+          fun { mode_annotations; ret_mode_annotations; ret_type_constraint } acc ->
             let acc = self#modes mode_annotations acc in
-            let acc = self#type_constraint type_constraint acc in
+            let acc = self#modes ret_mode_annotations acc in
+            let acc = self#option self#type_constraint ret_type_constraint acc in
             acc
 
         method function_body : function_body -> 'acc -> 'acc =
@@ -1174,6 +1319,14 @@ module Ast_traverse = struct
             | Mode a -> self#string a acc
 
         method modes : modes -> 'acc -> 'acc = self#list (self#loc self#mode)
+
+        method modality : modality -> 'acc -> 'acc =
+          fun x acc ->
+            match x with
+            | Modality a -> self#string a acc
+
+        method modalities : modalities -> 'acc -> 'acc =
+          self#list (self#loc self#modality)
 
         method signature_items : signature_items -> 'acc -> 'acc =
           self#list self#signature_item
@@ -1219,10 +1372,11 @@ module Ast_traverse = struct
               let a, acc = self#jkind_annotation a acc in
               let b, acc = self#modes b acc in
               Mod (a, b), acc
-            | With (a, b) ->
+            | With (a, b, c) ->
               let a, acc = self#jkind_annotation a acc in
               let b, acc = self#core_type b acc in
-              With (a, b), acc
+              let c, acc = self#modalities c acc in
+              With (a, b, c), acc
             | Kind_of a ->
               let a, acc = self#core_type a acc in
               Kind_of a, acc
@@ -1269,10 +1423,13 @@ module Ast_traverse = struct
 
         method function_constraint
           : function_constraint -> 'acc -> function_constraint * 'acc =
-          fun { mode_annotations; type_constraint } acc ->
+          fun { mode_annotations; ret_mode_annotations; ret_type_constraint } acc ->
             let mode_annotations, acc = self#modes mode_annotations acc in
-            let type_constraint, acc = self#type_constraint type_constraint acc in
-            { mode_annotations; type_constraint }, acc
+            let ret_mode_annotations, acc = self#modes ret_mode_annotations acc in
+            let ret_type_constraint, acc =
+              self#option self#type_constraint ret_type_constraint acc
+            in
+            { mode_annotations; ret_mode_annotations; ret_type_constraint }, acc
 
         method function_body : function_body -> 'acc -> function_body * 'acc =
           fun x acc ->
@@ -1294,6 +1451,16 @@ module Ast_traverse = struct
               Mode a, acc
 
         method modes : modes -> 'acc -> modes * 'acc = self#list (self#loc self#mode)
+
+        method modality : modality -> 'acc -> modality * 'acc =
+          fun x acc ->
+            match x with
+            | Modality a ->
+              let a, acc = self#string a acc in
+              Modality a, acc
+
+        method modalities : modalities -> 'acc -> modalities * 'acc =
+          self#list (self#loc self#modality)
 
         method signature_items : signature_items -> 'acc -> signature_items * 'acc =
           self#list self#signature_item
@@ -1328,10 +1495,11 @@ module Ast_traverse = struct
               let a = self#jkind_annotation ctx a in
               let b = self#modes ctx b in
               Mod (a, b)
-            | With (a, b) ->
+            | With (a, b, c) ->
               let a = self#jkind_annotation ctx a in
               let b = self#core_type ctx b in
-              With (a, b)
+              let c = self#modalities ctx c in
+              With (a, b, c)
             | Kind_of a ->
               let a = self#core_type ctx a in
               Kind_of a
@@ -1376,10 +1544,13 @@ module Ast_traverse = struct
               Pcoerce (a, b)
 
         method function_constraint : 'ctx -> function_constraint -> function_constraint =
-          fun ctx { mode_annotations; type_constraint } ->
+          fun ctx { mode_annotations; ret_mode_annotations; ret_type_constraint } ->
             let mode_annotations = self#modes ctx mode_annotations in
-            let type_constraint = self#type_constraint ctx type_constraint in
-            { mode_annotations; type_constraint }
+            let ret_mode_annotations = self#modes ctx ret_mode_annotations in
+            let ret_type_constraint =
+              self#option self#type_constraint ctx ret_type_constraint
+            in
+            { mode_annotations; ret_mode_annotations; ret_type_constraint }
 
         method function_body : 'ctx -> function_body -> function_body =
           fun ctx x ->
@@ -1401,6 +1572,16 @@ module Ast_traverse = struct
               Mode a
 
         method modes : 'ctx -> modes -> modes = self#list (self#loc self#mode)
+
+        method modality : 'ctx -> modality -> modality =
+          fun ctx x ->
+            match x with
+            | Modality a ->
+              let a = self#string ctx a in
+              Modality a
+
+        method modalities : 'ctx -> modalities -> modalities =
+          self#list (self#loc self#modality)
 
         method signature_items : 'ctx -> signature_items -> signature_items =
           self#list self#signature_item
@@ -1436,10 +1617,11 @@ module Ast_traverse = struct
               let a = self#jkind_annotation a in
               let b = self#modes b in
               self#constr "Mod" [ a; b ]
-            | With (a, b) ->
+            | With (a, b, c) ->
               let a = self#jkind_annotation a in
               let b = self#core_type b in
-              self#constr "With" [ a; b ]
+              let c = self#modalities c in
+              self#constr "With" [ a; b; c ]
             | Kind_of a ->
               let a = self#core_type a in
               self#constr "Kind_of" [ a ]
@@ -1484,11 +1666,17 @@ module Ast_traverse = struct
               self#constr "Pcoerce" [ a; b ]
 
         method function_constraint : function_constraint -> 'res =
-          fun { mode_annotations; type_constraint } ->
+          fun { mode_annotations; ret_mode_annotations; ret_type_constraint } ->
             let mode_annotations = self#modes mode_annotations in
-            let type_constraint = self#type_constraint type_constraint in
+            let ret_mode_annotations = self#modes ret_mode_annotations in
+            let ret_type_constraint =
+              self#option self#type_constraint ret_type_constraint
+            in
             self#record
-              [ "mode_annotations", mode_annotations; "type_constraint", type_constraint ]
+              [ "mode_annotations", mode_annotations
+              ; "ret_mode_annotations", ret_mode_annotations
+              ; "ret_type_constraint", ret_type_constraint
+              ]
 
         method function_body : function_body -> 'res =
           fun x ->
@@ -1510,6 +1698,15 @@ module Ast_traverse = struct
               self#constr "Mode" [ a ]
 
         method modes : modes -> 'res = self#list (self#loc self#mode)
+
+        method modality : modality -> 'res =
+          fun x ->
+            match x with
+            | Modality a ->
+              let a = self#string a in
+              self#constr "Modality" [ a ]
+
+        method modalities : modalities -> 'res = self#list (self#loc self#modality)
         method signature_items : signature_items -> 'res = self#list self#signature_item
         method signature : signature -> 'res = self#signature_items
       end
@@ -1555,11 +1752,12 @@ module Ast_traverse = struct
               let b = self#modes ctx b in
               ( Mod (Stdlib.fst a, Stdlib.fst b)
               , self#constr ctx "Mod" [ Stdlib.snd a; Stdlib.snd b ] )
-            | With (a, b) ->
+            | With (a, b, c) ->
               let a = self#jkind_annotation ctx a in
               let b = self#core_type ctx b in
-              ( With (Stdlib.fst a, Stdlib.fst b)
-              , self#constr ctx "With" [ Stdlib.snd a; Stdlib.snd b ] )
+              let c = self#modalities ctx c in
+              ( With (Stdlib.fst a, Stdlib.fst b, Stdlib.fst c)
+              , self#constr ctx "With" [ Stdlib.snd a; Stdlib.snd b; Stdlib.snd c ] )
             | Kind_of a ->
               let a = self#core_type ctx a in
               Kind_of (Stdlib.fst a), self#constr ctx "Kind_of" [ Stdlib.snd a ]
@@ -1620,16 +1818,21 @@ module Ast_traverse = struct
 
         method function_constraint
           : 'ctx -> function_constraint -> function_constraint * 'res =
-          fun ctx { mode_annotations; type_constraint } ->
+          fun ctx { mode_annotations; ret_mode_annotations; ret_type_constraint } ->
             let mode_annotations = self#modes ctx mode_annotations in
-            let type_constraint = self#type_constraint ctx type_constraint in
+            let ret_mode_annotations = self#modes ctx ret_mode_annotations in
+            let ret_type_constraint =
+              self#option self#type_constraint ctx ret_type_constraint
+            in
             ( { mode_annotations = Stdlib.fst mode_annotations
-              ; type_constraint = Stdlib.fst type_constraint
+              ; ret_mode_annotations = Stdlib.fst ret_mode_annotations
+              ; ret_type_constraint = Stdlib.fst ret_type_constraint
               }
             , self#record
                 ctx
                 [ "mode_annotations", Stdlib.snd mode_annotations
-                ; "type_constraint", Stdlib.snd type_constraint
+                ; "ret_mode_annotations", Stdlib.snd ret_mode_annotations
+                ; "ret_type_constraint", Stdlib.snd ret_type_constraint
                 ] )
 
         method function_body : 'ctx -> function_body -> function_body * 'res =
@@ -1658,6 +1861,16 @@ module Ast_traverse = struct
 
         method modes : 'ctx -> modes -> modes * 'res = self#list (self#loc self#mode)
 
+        method modality : 'ctx -> modality -> modality * 'res =
+          fun ctx x ->
+            match x with
+            | Modality a ->
+              let a = self#string ctx a in
+              Modality (Stdlib.fst a), self#constr ctx "Modality" [ Stdlib.snd a ]
+
+        method modalities : 'ctx -> modalities -> modalities * 'res =
+          self#list (self#loc self#modality)
+
         method signature_items : 'ctx -> signature_items -> signature_items * 'res =
           self#list self#signature_item
 
@@ -1677,10 +1890,12 @@ module Ast_traverse = struct
       method function_body : Pexp_function.function_body T.t
       method function_param : Pexp_function.function_param T.t
       method function_param_desc : Pexp_function.function_param_desc T.t
-      method function_constraint : Pexp_function.function_constraint T.t
+      method function_constraint : Pexp_function.Function_constraint.t T.t
       method type_constraint : Pexp_function.type_constraint T.t
-      method modes : Modes.t T.t
       method mode : Mode.t T.t
+      method modes : Modes.t T.t
+      method modality : Modality.t T.t
+      method modalities : Modalities.t T.t
       method signature_items : signature_item list T.t
     end
   end
@@ -1695,10 +1910,12 @@ module Ast_traverse = struct
       method function_body : ('ctx, Pexp_function.function_body) T.t
       method function_param : ('ctx, Pexp_function.function_param) T.t
       method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
-      method function_constraint : ('ctx, Pexp_function.function_constraint) T.t
+      method function_constraint : ('ctx, Pexp_function.Function_constraint.t) T.t
       method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
-      method modes : ('ctx, Modes.t) T.t
       method mode : ('ctx, Mode.t) T.t
+      method modes : ('ctx, Modes.t) T.t
+      method modality : ('ctx, Modality.t) T.t
+      method modalities : ('ctx, Modalities.t) T.t
       method signature_items : ('ctx, signature_item list) T.t
     end
   end
