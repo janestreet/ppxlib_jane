@@ -81,38 +81,38 @@
 <   type t = type_kind =
 ---
 >   type t =
-324c326
+338c340
 <   type 'a t = 'a include_infos =
 ---
 >   type 'a t =
-336c338
+350c352
 <   type t = signature_item_desc =
 ---
 >   type t =
-360c362
+374c376
 <   type t = signature =
 ---
 >   type t =
-371c373
+385c387
 <   type t = structure_item_desc =
 ---
 >   type t =
-394c396
+408c410
 <   type t = functor_parameter =
 ---
 >   type t =
-403c405
+417c419
 <   type t = module_type_desc =
 ---
 >   type t =
-418c420,425
+432c434,439
 <   type t = module_expr_desc =
 ---
 >
 >   type module_instance = private Module_instance
 > 
 >   type t =
-433,437c440,523
+447,451c454,537
 <   class virtual map : Ppxlib_ast.Ast.map
 <   class virtual iter : Ppxlib_ast.Ast.iter
 <   class virtual ['acc] fold : ['acc] Ppxlib_ast.Ast.fold

@@ -320,6 +320,20 @@ module Type_kind : sig
   val to_parsetree : t -> type_kind
 end
 
+module Constructor_declaration : sig
+  val extract_vars_with_jkind_annotations
+    :  constructor_declaration
+    -> (string loc * jkind_annotation option) list
+
+  val create
+    :  name:string loc
+    -> vars:(string loc * jkind_annotation option) list
+    -> args:constructor_arguments
+    -> res:core_type option
+    -> loc:Location.t
+    -> constructor_declaration
+end
+
 module Include_infos : sig
   type 'a t = 'a include_infos =
     { pincl_kind : Include_kind.t

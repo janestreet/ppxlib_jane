@@ -152,7 +152,10 @@ module type S = sig
   type function_body = Shim.Pexp_function.function_body
 
   module Latest : sig
-    (** Avoid shadowing [pexp_function] in Ppxlib's AST builder. *)
+    (** Avoid shadowing Ppxlib's AST builder. *)
+
+    val ptyp_any : (jkind_annotation option -> core_type) with_loc
+    val ptyp_var : (string -> jkind_annotation option -> core_type) with_loc
 
     val pexp_function
       : (?attrs:attributes

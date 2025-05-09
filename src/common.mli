@@ -8,6 +8,10 @@ val get_type_param_name_and_jkind
   :  Parsetree.core_type * (Asttypes.variance * Asttypes.injectivity)
   -> string Location.loc * Shim.jkind_annotation option
 
+val get_type_param_name_and_jkind_of_core_type
+  :  Parsetree.core_type
+  -> string Location.loc * Shim.jkind_annotation option
+
 (** Check if the parsetree is of an unlabeled tuple (i.e. all labels are [None]), and
     return the components of the tuple dropping its [None] labels. *)
 val as_unlabeled_tuple : (string option * 'a) list -> 'a list option

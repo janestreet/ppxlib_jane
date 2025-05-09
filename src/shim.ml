@@ -301,6 +301,20 @@ module Type_kind = struct
   let to_parsetree x = x
 end
 
+module Constructor_declaration = struct
+  let extract_vars_with_jkind_annotations cd = cd.pcd_vars
+
+  let create ~name ~vars ~args ~res ~loc =
+    { pcd_name = name
+    ; pcd_vars = vars
+    ; pcd_args = args
+    ; pcd_res = res
+    ; pcd_loc = loc
+    ; pcd_attributes = []
+    }
+  ;;
+end
+
 module Signature_item_desc = struct
   type t = signature_item_desc =
     | Psig_value of value_description
