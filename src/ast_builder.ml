@@ -236,6 +236,16 @@ module Default = struct
   ;;
 
   module Latest = struct
+    let ptyp_any ~loc a =
+      let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_any a) in
+      { ptyp_loc_stack = []; ptyp_attributes = []; ptyp_loc = loc; ptyp_desc }
+    ;;
+
+    let ptyp_var ~loc a b =
+      let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_var (a, b)) in
+      { ptyp_loc_stack = []; ptyp_attributes = []; ptyp_loc = loc; ptyp_desc }
+    ;;
+
     let pexp_function ~loc ?(attrs = []) params constraint_ body =
       pexp_function ~loc ~attrs ~params ~constraint_ ~body
     ;;
@@ -322,16 +332,17 @@ module Default = struct
   ;;
 
   let ptyp_poly ~loc ?(attrs = []) vars body =
-    if List.is_empty vars
-    then
+    match vars, attrs with
+    | [], [] -> body
+    | [], _ ->
       { body with
         ptyp_loc = loc
       ; ptyp_loc_stack = body.ptyp_loc :: body.ptyp_loc_stack
       ; ptyp_attributes = body.ptyp_attributes @ attrs
       }
-    else (
+    | _ ->
       let desc = Shim.Core_type_desc.to_parsetree (Ptyp_poly (vars, body)) in
-      mktyp ~attrs ~loc desc)
+      mktyp ~attrs ~loc desc
   ;;
 
   let pexp_newtype ~loc ?attrs a b c =
@@ -393,6 +404,8 @@ struct
   let pmod_constraint ?attrs expr mty modes = pmod_constraint ~loc ?attrs expr mty modes
 
   module Latest = struct
+    let ptyp_any a : core_type = Latest.ptyp_any ~loc a
+    let ptyp_var a b : core_type = Latest.ptyp_var ~loc a b
     let pexp_function ?attrs a b c : expression = Latest.pexp_function ~loc ?attrs a b c
   end
 

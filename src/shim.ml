@@ -460,7 +460,7 @@ module Pattern_desc = struct
         ~loc
         "[Ppat_unboxed_tuple] with an \"open\" pattern cannot be converted to an \
          upstream [pattern_desc]"
-    | Ppat_tuple (labeled_pats, Closed) ->
+    | Ppat_unboxed_tuple (labeled_pats, Closed) ->
       (match as_unlabeled_tuple labeled_pats with
        | Some pats -> Ppat_tuple pats
        | None ->
@@ -687,6 +687,20 @@ module Type_kind = struct
     | Ptype_record x -> Ptype_record x
     | Ptype_record_unboxed_product x -> Ptype_record x
     | Ptype_open -> Ptype_open
+  ;;
+end
+
+module Constructor_declaration = struct
+  let extract_vars_with_jkind_annotations cd = List.map (fun s -> s, None) cd.pcd_vars
+
+  let create ~name ~vars ~args ~res ~loc =
+    { pcd_name = name
+    ; pcd_vars = List.map fst vars
+    ; pcd_args = args
+    ; pcd_res = res
+    ; pcd_loc = loc
+    ; pcd_attributes = []
+    }
   ;;
 end
 
