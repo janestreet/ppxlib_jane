@@ -331,6 +331,11 @@ module Default = struct
     mkpat ?attrs ~loc ppat_desc
   ;;
 
+  let ptyp_alias ~loc ?(attrs = []) a b c =
+    let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_alias (a, b, c)) in
+    { ptyp_loc_stack = []; ptyp_attributes = attrs; ptyp_loc = loc; ptyp_desc }
+  ;;
+
   let ptyp_poly ~loc ?(attrs = []) vars body =
     match vars, attrs with
     | [], [] -> body
@@ -450,6 +455,7 @@ struct
   let ppat_tuple ?attrs a b : pattern = ppat_tuple ~loc ?attrs a b
   let pmty_signature a : module_type = pmty_signature ~loc a
   let ptyp_poly ?attrs a b : core_type = ptyp_poly ~loc ?attrs a b
+  let ptyp_alias ?attrs a b c : core_type = ptyp_alias ~loc ?attrs a b c
   let pexp_newtype ?attrs a b c : expression = pexp_newtype ~loc ?attrs a b c
   let pexp_array ?attrs a b : expression = pexp_array ~loc ?attrs a b
   let ppat_array ?attrs a b : pattern = ppat_array ~loc ?attrs a b

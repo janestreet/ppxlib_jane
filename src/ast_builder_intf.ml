@@ -300,6 +300,14 @@ module type S = sig
 
   (** {3 Layouts} *)
 
+  val ptyp_alias
+    : (?attrs:attributes
+       -> core_type
+       -> label loc option
+       -> jkind_annotation option
+       -> core_type)
+        with_loc
+
   val ptyp_poly
     : (?attrs:attributes
        -> (string loc * jkind_annotation option) list
