@@ -185,16 +185,6 @@ module N_ary_functions : sig
   (** These types use the [P] prefix to match how they are represented in the
       upstream compiler *)
 
-  (** See the comment on [expression]. *)
-  type function_body =
-    | Pfunction_body of Parsetree.expression
-    | Pfunction_cases of Parsetree.case list * Location.t * Parsetree.attributes
-        (** In [Pfunction_cases (_, loc, attrs)], the location extends from the
-        start of the [function] keyword to the end of the last case. The
-        compiler will only use typechecking-related attributes from [attrs],
-        e.g. enabling or disabling a warning.
-    *)
-
   type function_param_desc =
     | Pparam_val of Asttypes.arg_label * Parsetree.expression option * Parsetree.pattern
         (** [Pparam_val (lbl, exp0, P)] represents the parameter:
@@ -240,17 +230,13 @@ module N_ary_functions : sig
     ; pparam_loc : Location.t
     }
 
-  type type_constraint =
-    | Pconstraint of Parsetree.core_type
-    | Pcoerce of Parsetree.core_type option * Parsetree.core_type
-
   (** The mode annotation placed on a function let-binding when the function
       has a type constraint on the body, e.g.
       [let local_ f x : int -> int = ...].
   *)
   type function_constraint =
     { mode_annotations : Mode_expr.t
-    ; type_constraint : type_constraint
+    ; type_constraint : Parsetree.type_constraint
     }
 
   (** [([P1; ...; Pn], C, body)] represents any construct
@@ -267,7 +253,7 @@ module N_ary_functions : sig
       A function must have parameters. [Pexp_function (params, _, body)] must
       have non-empty [params] or a [Pfunction_cases _] body.
   *)
-  type expression = function_param list * function_constraint option * function_body
+  type expression = function_param list * function_constraint option * Parsetree.function_body
 
   val expr_of : loc:Location.t -> expression -> Parsetree.expression
 end
