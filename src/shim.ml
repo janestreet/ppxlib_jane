@@ -189,6 +189,7 @@ module Core_type_desc = struct
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
+    | Ptyp_of_kind of jkind_annotation
     | Ptyp_extension of extension
 
   let of_parsetree x = x

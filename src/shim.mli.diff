@@ -60,15 +60,15 @@
 <   type t = core_type_desc =
 ---
 >   type t =
-219c214
+220c215
 <   type t = core_type =
 ---
 >   type t =
-231c226
+232c227
 <   type t = pattern_desc =
 ---
 >   type t =
-258c253,260
+259c254,261
 <   type t = expression_desc =
 ---
 >
@@ -77,42 +77,42 @@
 >     | Pcomp_array_comprehension of unit
 > 
 >   type t =
-312c314
+313c315
 <   type t = type_kind =
 ---
 >   type t =
-338c340
+339c341
 <   type 'a t = 'a include_infos =
 ---
 >   type 'a t =
-350c352
+351c353
 <   type t = signature_item_desc =
 ---
 >   type t =
-374c376
+375c377
 <   type t = signature =
 ---
 >   type t =
-385c387
+386c388
 <   type t = structure_item_desc =
 ---
 >   type t =
-408c410
+409c411
 <   type t = functor_parameter =
 ---
 >   type t =
-417c419
+418c420
 <   type t = module_type_desc =
 ---
 >   type t =
-432c434,439
+433c435,440
 <   type t = module_expr_desc =
 ---
 >
 >   type module_instance = private Module_instance
 > 
 >   type t =
-447,451c454,537
+448,452c455,538
 <   class virtual map : Ppxlib_ast.Ast.map
 <   class virtual iter : Ppxlib_ast.Ast.iter
 <   class virtual ['acc] fold : ['acc] Ppxlib_ast.Ast.fold

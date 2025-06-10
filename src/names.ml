@@ -15,6 +15,7 @@ module Language_feature_name = struct
     | Ptyp_class _ -> "class as a type"
     | Ptyp_poly _ -> "explicit polymorphic type"
     | Ptyp_package _ -> "first-class module type"
+    | Ptyp_of_kind _ -> "type of a fixed kind"
     | Ptyp_extension _ -> "extension point as a type"
   ;;
 
@@ -185,6 +186,7 @@ module Constructor_name = struct
     | Ptyp_class _ -> "Ptyp_class"
     | Ptyp_poly _ -> "Ptyp_poly"
     | Ptyp_package _ -> "Ptyp_package"
+    | Ptyp_of_kind _ -> "Ptyp_of_kind"
     | Ptyp_extension _ -> "Ptyp_extension"
   ;;
 
