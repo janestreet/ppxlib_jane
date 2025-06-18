@@ -1,5 +1,5 @@
 (library
  (name ppxlib_jane)
  (public_name ppxlib_jane)
- (libraries compiler-libs.common ppxlib.ast ppxlib.stdppx)
+ (libraries compiler-libs.common ppxlib.ast ppxlib.stdppx ppxlib)
  (preprocess no_preprocessing))

@@ -195,7 +195,7 @@ module Make_payload_protocol_of_stringable (Stringable : Stringable) :
   module Encode = struct
     let as_expr t_loc =
       let string = Stringable.to_string t_loc.txt in
-      Ast_helper.Exp.ident (Location.mkloc (Longident.Lident string) t_loc.loc)
+      Ast_helper.Exp.ident (Location.mkloc (Astlib.Longident.Lident string) t_loc.loc)
     ;;
 
     let structure_item_of_expr expr =
@@ -269,7 +269,7 @@ module Make_payload_protocol_of_stringable (Stringable : Stringable) :
       let from_expr = function
         | { pexp_desc = Pexp_ident payload_lid; _ } ->
           let t =
-            match Stringable.of_string (Longident.last payload_lid.txt) with
+            match Stringable.of_string (Ppxlib.Longident.last_exn payload_lid.txt) with
             | None -> raise Unexpected
             | Some t -> t
           in
@@ -1070,7 +1070,7 @@ end
 module Strengthen = struct
   type nonrec module_type =
     { mty : Parsetree.module_type
-    ; mod_id : Longident.t Location.loc
+    ; mod_id : Astlib.Longident.t Location.loc
     }
 
   let feature : Feature.t = Language_extension Module_strengthening
