@@ -326,7 +326,7 @@ end
 module Strengthen : sig
   type module_type =
     { mty : Parsetree.module_type
-    ; mod_id : Longident.t Location.loc
+    ; mod_id : Astlib.Longident.t Location.loc
     }
 
   val mty_of : loc:Location.t -> module_type -> Parsetree.module_type
