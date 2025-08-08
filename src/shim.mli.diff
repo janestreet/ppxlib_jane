@@ -20,55 +20,55 @@
 <   type t = constructor_argument
 ---
 >   type t = core_type
-103c98
+104c99
 <   type t = module_declaration =
 ---
 >   type t =
-126c121
+127c122
 < type nonrec jkind_annotation_desc = jkind_annotation_desc =
 ---
 > type jkind_annotation_desc =
-134c129
+135c130
 < type nonrec jkind_annotation = jkind_annotation =
 ---
 > and jkind_annotation =
-144c139
+145c140
 <   type t = constant =
 ---
 >   type t =
-158c153
+159c154
 <   type nonrec function_param_desc = function_param_desc =
 ---
 >   type function_param_desc =
-162c157
+163c158
 <   type nonrec function_param = function_param =
 ---
 >   type function_param =
-167c162
+168c163
 <   type nonrec type_constraint = type_constraint =
 ---
 >   type type_constraint =
-172c167
+173c168
 <     type t = function_constraint =
 ---
 >     type t =
-182c177
+183c178
 <   type nonrec function_body = function_body =
 ---
 >   type function_body =
-199c194
+200c195
 <   type t = core_type_desc =
 ---
 >   type t =
-219c214
+221c216
 <   type t = core_type =
 ---
 >   type t =
-231c226
+233c228
 <   type t = pattern_desc =
 ---
 >   type t =
-258c253,260
+261c256,263
 <   type t = expression_desc =
 ---
 >
@@ -77,42 +77,42 @@
 >     | Pcomp_array_comprehension of unit
 > 
 >   type t =
-312c314
+315c317
 <   type t = type_kind =
 ---
 >   type t =
-338c340
+341c343
 <   type 'a t = 'a include_infos =
 ---
 >   type 'a t =
-350c352
+353c355
 <   type t = signature_item_desc =
 ---
 >   type t =
-374c376
+377c379
 <   type t = signature =
 ---
 >   type t =
-385c387
+388c390
 <   type t = structure_item_desc =
 ---
 >   type t =
-408c410
+411c413
 <   type t = functor_parameter =
 ---
 >   type t =
-417c419
+420c422
 <   type t = module_type_desc =
 ---
 >   type t =
-432c434,439
+435c437,442
 <   type t = module_expr_desc =
 ---
 >
 >   type module_instance = private Module_instance
 > 
 >   type t =
-447,451c454,537
+450,454c457,493
 <   class virtual map : Ppxlib_ast.Ast.map
 <   class virtual iter : Ppxlib_ast.Ast.iter
 <   class virtual ['acc] fold : ['acc] Ppxlib_ast.Ast.fold
@@ -156,6 +156,28 @@
 >       method signature_items : ('ctx, signature_item list) T.t
 >     end
 >   end
+456,457c495,568
+<   class virtual ['ctx, 'res] lift_map_with_context :
+<     ['ctx, 'res] Ppxlib_ast.Ast.lift_map_with_context
+---
+>   module Jane_street_extensions2 (T : sig
+>       type ('a, 'b, 'c) t
+>     end) : sig
+>     class type ['ctx, 'res] t = object
+>       method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
+>       method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
+>       method function_body : ('ctx, Pexp_function.function_body, 'res) T.t
+>       method function_param : ('ctx, Pexp_function.function_param, 'res) T.t
+>       method function_param_desc : ('ctx, Pexp_function.function_param_desc, 'res) T.t
+>       method function_constraint : ('ctx, Pexp_function.Function_constraint.t, 'res) T.t
+>       method type_constraint : ('ctx, Pexp_function.type_constraint, 'res) T.t
+>       method mode : ('ctx, Mode.t, 'res) T.t
+>       method modes : ('ctx, Modes.t, 'res) T.t
+>       method modality : ('ctx, Modality.t, 'res) T.t
+>       method modalities : ('ctx, Modalities.t, 'res) T.t
+>       method signature_items : ('ctx, signature_item list, 'res) T.t
+>     end
+>   end
 > 
 >   module Ts : sig
 >     module Map : sig
@@ -176,6 +198,10 @@
 > 
 >     module Map_with_context : sig
 >       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
+>     end
+> 
+>     module Lift_map_with_context : sig
+>       type ('a, 'b, 'c) t = ('a, 'b, 'c) Ppxlib_traverse_builtins.T.lift_map_with_context
 >     end
 >   end
 > 
@@ -202,4 +228,9 @@
 >   class virtual ['ctx] map_with_context : object
 >     inherit ['ctx] Ppxlib_ast.Ast.map_with_context
 >     inherit ['ctx] Jane_street_extensions1(Ts.Map_with_context).t
+>   end
+> 
+>   class virtual ['ctx, 'res] lift_map_with_context : object
+>     inherit ['ctx, 'res] Ppxlib_ast.Ast.lift_map_with_context
+>     inherit ['ctx, 'res] Jane_street_extensions2(Ts.Lift_map_with_context).t
 >   end

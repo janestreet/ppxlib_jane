@@ -65,6 +65,7 @@ end
 
 module Value_description = struct
   let extract_modalities vd = [], vd
+  let extract_modalities_with_locs vd = [], vd
 
   let create ~loc ~name ~type_ ~modalities:_ ~prim =
     { pval_loc = loc
@@ -313,6 +314,7 @@ module Core_type_desc = struct
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
+    | Ptyp_of_kind of jkind_annotation
     | Ptyp_extension of extension
 
   let of_parsetree : core_type_desc -> t = function
@@ -355,6 +357,7 @@ module Core_type_desc = struct
     (* new constructors *)
     | Ptyp_unboxed_tuple labeled_typs ->
       Ptyp_tuple (as_unlabeled_tuple_unconditionally labeled_typs)
+    | Ptyp_of_kind _ -> failwith "[Ptyp_of_kind] unimplemented in ppxlib_jane"
     (* unchanged constructors *)
     | Ptyp_constr (a, b) -> Ptyp_constr (a, b)
     | Ptyp_object (a, b) -> Ptyp_object (a, b)
@@ -395,7 +398,8 @@ module Pattern_desc = struct
     | Ppat_interval of constant * constant
     | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
-    | Ppat_construct of Longident.t loc * (string loc list * pattern) option
+    | Ppat_construct of
+        Longident.t loc * ((string loc * jkind_annotation option) list * pattern) option
     | Ppat_variant of label * pattern option
     | Ppat_record of (Longident.t loc * pattern) list * closed_flag
     | Ppat_record_unboxed_product of (Longident.t loc * pattern) list * closed_flag
@@ -413,13 +417,17 @@ module Pattern_desc = struct
     (* changed constructors *)
     | Ppat_constraint (a, b) -> Ppat_constraint (a, Some b, [])
     | Ppat_tuple a -> Ppat_tuple (add_none_labels a, Closed)
+    | Ppat_construct (a, b) ->
+      let b =
+        Option.map (fun (vars, pattern) -> List.map (fun s -> s, None) vars, pattern) b
+      in
+      Ppat_construct (a, b)
     (* unchanged constructors *)
     | Ppat_any -> Ppat_any
     | Ppat_var a -> Ppat_var a
     | Ppat_alias (a, b) -> Ppat_alias (a, b)
     | Ppat_constant a -> Ppat_constant a
     | Ppat_interval (a, b) -> Ppat_interval (a, b)
-    | Ppat_construct (a, b) -> Ppat_construct (a, b)
     | Ppat_variant (a, b) -> Ppat_variant (a, b)
     | Ppat_record (a, b) -> Ppat_record (a, b)
     | Ppat_array a -> Ppat_array (Mutable, a)
@@ -468,13 +476,21 @@ module Pattern_desc = struct
            "[Ppat_unboxed_tuple], when labels are present, cannot be converted to an \
             upstream [pattern_desc]")
     | Ppat_record_unboxed_product (a, b) -> Ppat_record (a, b)
+    | Ppat_construct (a, b) ->
+      let b =
+        Option.map
+          (fun (vars, p) ->
+            let vars = List.map (fun (var, (_ : jkind_annotation option)) -> var) vars in
+            vars, p)
+          b
+      in
+      Ppat_construct (a, b)
     (* unchanged constructors *)
     | Ppat_any -> Ppat_any
     | Ppat_var a -> Ppat_var a
     | Ppat_alias (a, b) -> Ppat_alias (a, b)
     | Ppat_constant a -> Ppat_constant a
     | Ppat_interval (a, b) -> Ppat_interval (a, b)
-    | Ppat_construct (a, b) -> Ppat_construct (a, b)
     | Ppat_variant (a, b) -> Ppat_variant (a, b)
     | Ppat_record (a, b) -> Ppat_record (a, b)
     | Ppat_or (a, b) -> Ppat_or (a, b)
@@ -1934,6 +1950,26 @@ module Ast_traverse = struct
     end
   end
 
+  module Jane_street_extensions2 (T : sig
+      type ('a, 'b, 'c) t
+    end) =
+  struct
+    class type ['ctx, 'res] t = object
+      method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
+      method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
+      method function_body : ('ctx, Pexp_function.function_body, 'res) T.t
+      method function_param : ('ctx, Pexp_function.function_param, 'res) T.t
+      method function_param_desc : ('ctx, Pexp_function.function_param_desc, 'res) T.t
+      method function_constraint : ('ctx, Pexp_function.Function_constraint.t, 'res) T.t
+      method type_constraint : ('ctx, Pexp_function.type_constraint, 'res) T.t
+      method mode : ('ctx, Mode.t, 'res) T.t
+      method modes : ('ctx, Modes.t, 'res) T.t
+      method modality : ('ctx, Modality.t, 'res) T.t
+      method modalities : ('ctx, Modalities.t, 'res) T.t
+      method signature_items : ('ctx, signature_item list, 'res) T.t
+    end
+  end
+
   module Ts = struct
     module Map = struct
       type 'a t = 'a Ppxlib_traverse_builtins.T.map
@@ -1953,6 +1989,10 @@ module Ast_traverse = struct
 
     module Map_with_context = struct
       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
+    end
+
+    module Lift_map_with_context = struct
+      type ('a, 'b, 'c) t = ('a, 'b, 'c) Ppxlib_traverse_builtins.T.lift_map_with_context
     end
   end
 
@@ -1984,5 +2024,11 @@ module Ast_traverse = struct
     object
       inherit ['ctx] Ppxlib_ast.Ast.map_with_context
       inherit ['ctx] Deriving_inline.map_with_context
+    end
+
+  class virtual ['ctx, 'res] lift_map_with_context =
+    object
+      inherit ['ctx, 'res] Ppxlib_ast.Ast.lift_map_with_context
+      inherit ['ctx, 'res] Deriving_inline.lift_map_with_context
     end
 end

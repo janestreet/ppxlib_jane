@@ -84,6 +84,7 @@ end
 
 module Value_description : sig
   val extract_modalities : value_description -> Modality.t list * value_description
+  val extract_modalities_with_locs : value_description -> Modalities.t * value_description
 
   val create
     :  loc:Location.t
@@ -204,6 +205,7 @@ module Core_type_desc : sig
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
+    | Ptyp_of_kind of jkind_annotation
     | Ptyp_extension of extension
 
   val of_parsetree : core_type_desc -> t
@@ -231,7 +233,8 @@ module Pattern_desc : sig
     | Ppat_interval of constant * constant
     | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
-    | Ppat_construct of Longident.t loc * (string loc list * pattern) option
+    | Ppat_construct of
+        Longident.t loc * ((string loc * jkind_annotation option) list * pattern) option
     | Ppat_variant of label * pattern option
     | Ppat_record of (Longident.t loc * pattern) list * closed_flag
     | Ppat_record_unboxed_product of (Longident.t loc * pattern) list * closed_flag
@@ -483,6 +486,25 @@ module Ast_traverse : sig
     end
   end
 
+  module Jane_street_extensions2 (T : sig
+      type ('a, 'b, 'c) t
+    end) : sig
+    class type ['ctx, 'res] t = object
+      method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
+      method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
+      method function_body : ('ctx, Pexp_function.function_body, 'res) T.t
+      method function_param : ('ctx, Pexp_function.function_param, 'res) T.t
+      method function_param_desc : ('ctx, Pexp_function.function_param_desc, 'res) T.t
+      method function_constraint : ('ctx, Pexp_function.Function_constraint.t, 'res) T.t
+      method type_constraint : ('ctx, Pexp_function.type_constraint, 'res) T.t
+      method mode : ('ctx, Mode.t, 'res) T.t
+      method modes : ('ctx, Modes.t, 'res) T.t
+      method modality : ('ctx, Modality.t, 'res) T.t
+      method modalities : ('ctx, Modalities.t, 'res) T.t
+      method signature_items : ('ctx, signature_item list, 'res) T.t
+    end
+  end
+
   module Ts : sig
     module Map : sig
       type 'a t = 'a Ppxlib_traverse_builtins.T.map
@@ -502,6 +524,10 @@ module Ast_traverse : sig
 
     module Map_with_context : sig
       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
+    end
+
+    module Lift_map_with_context : sig
+      type ('a, 'b, 'c) t = ('a, 'b, 'c) Ppxlib_traverse_builtins.T.lift_map_with_context
     end
   end
 
@@ -528,5 +554,10 @@ module Ast_traverse : sig
   class virtual ['ctx] map_with_context : object
     inherit ['ctx] Ppxlib_ast.Ast.map_with_context
     inherit ['ctx] Jane_street_extensions1(Ts.Map_with_context).t
+  end
+
+  class virtual ['ctx, 'res] lift_map_with_context : object
+    inherit ['ctx, 'res] Ppxlib_ast.Ast.lift_map_with_context
+    inherit ['ctx, 'res] Jane_street_extensions2(Ts.Lift_map_with_context).t
   end
 end

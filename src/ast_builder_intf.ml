@@ -251,7 +251,9 @@ module type S = sig
   (** {2 Unboxed types} *)
 
   val ptyp_unboxed_tuple : ((string option * core_type) list -> core_type) with_loc
-  val pexp_unboxed_tuple : ((string option * expression) list -> expression) with_loc
+
+  val pexp_unboxed_tuple
+    : (?attrs:attributes -> (string option * expression) list -> expression) with_loc
 
   val pexp_record_unboxed_product
     : (?attrs:attributes
@@ -268,7 +270,8 @@ module type S = sig
     : (?attrs:attributes -> expression -> Longident.t loc -> expression) with_loc
 
   val ppat_unboxed_tuple
-    : ((string option * pattern) list -> closed_flag -> pattern) with_loc
+    : (?attrs:attributes -> (string option * pattern) list -> closed_flag -> pattern)
+        with_loc
 
   (** {3 Expression literals} *)
 
