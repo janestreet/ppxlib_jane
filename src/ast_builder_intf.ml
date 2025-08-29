@@ -6,11 +6,14 @@ module type S = sig
   type 'a with_loc
   type arrow_argument := Shim.arrow_argument
   type arrow_result := Shim.arrow_result
+  type block_access := Shim.block_access
   type modality := Shim.Modality.t
   type modalities := Shim.Modalities.t
   type modes := Shim.Modes.t
   type include_kind := Shim.Include_kind.t
+  type index_kind = Shim.index_kind
   type jkind_annotation := Shim.jkind_annotation
+  type unboxed_access := Shim.unboxed_access
 
   module Pcstr_tuple_arg := Shim.Pcstr_tuple_arg
 
@@ -27,6 +30,11 @@ module type S = sig
   (** As [tarrow], but will return the result if the input list is empty rather than
       erroring; this means the result type cannot have a mode annotation. *)
   val tarrow_maybe : (arrow_argument list -> core_type -> core_type) with_loc
+
+  (** [Pexp_let] with [let mutable] support *)
+  val pexp_let
+    : (mutable_flag -> rec_flag -> value_binding list -> expression -> expression)
+        with_loc
 
   (** Construct a [Pexp_constraint] with modes *)
   val pexp_constraint : (expression -> core_type option -> modes -> expression) with_loc
@@ -272,6 +280,9 @@ module type S = sig
   val ppat_unboxed_tuple
     : (?attrs:attributes -> (string option * pattern) list -> closed_flag -> pattern)
         with_loc
+
+  val pexp_idx
+    : (?attrs:attributes -> block_access -> unboxed_access list -> expression) with_loc
 
   (** {3 Expression literals} *)
 

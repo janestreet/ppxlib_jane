@@ -52,6 +52,11 @@ module Default = struct
     | _ :: _ -> tarrow ~loc args { result_modes = []; result_type }
   ;;
 
+  let pexp_let ~loc a b c d =
+    let pexp_desc = Pexp_let (a, b, c, d) |> Shim.Expression_desc.to_parsetree ~loc in
+    mkexp ~loc pexp_desc
+  ;;
+
   let pexp_constraint ~loc a b c =
     let pexp_desc = Pexp_constraint (a, b, c) |> Shim.Expression_desc.to_parsetree ~loc in
     mkexp ~loc pexp_desc
@@ -374,6 +379,11 @@ module Default = struct
     mkexp ?attrs ~loc pexp_desc
   ;;
 
+  let pexp_idx ~loc ?attrs a b =
+    let pexp_desc = Shim.Expression_desc.to_parsetree ~loc (Pexp_idx (a, b)) in
+    mkexp ?attrs ~loc pexp_desc
+  ;;
+
   let ptyp_alias ~loc ?(attrs = []) a b c =
     let ptyp_desc = Shim.Core_type_desc.to_parsetree (Ptyp_alias (a, b, c)) in
     { ptyp_loc_stack = []; ptyp_attributes = attrs; ptyp_loc = loc; ptyp_desc }
@@ -419,6 +429,7 @@ struct
   let ptyp_arrow arg res : core_type = ptyp_arrow ~loc arg res
   let tarrow args res : core_type = tarrow ~loc args res
   let tarrow_maybe args res : core_type = tarrow_maybe ~loc args res
+  let pexp_let a b c d : expression = pexp_let ~loc a b c d
   let pexp_constraint a b c : expression = pexp_constraint ~loc a b c
   let ppat_constraint a b c : pattern = ppat_constraint ~loc a b c
 
@@ -484,6 +495,7 @@ struct
   ;;
 
   let pexp_unboxed_field ?attrs a b : expression = pexp_unboxed_field ~loc ?attrs a b
+  let pexp_idx ?attrs a b : expression = pexp_idx ~loc ?attrs a b
   let ppat_unboxed_tuple ?attrs a b : pattern = ppat_unboxed_tuple ~loc ?attrs a b
   let eint64_u c : expression = eint64_u ~loc c
   let eint32_u c : expression = eint32_u ~loc c

@@ -191,6 +191,19 @@ module Pexp_function : sig
     -> (function_param list * Function_constraint.t * function_body) option
 end
 
+type index_kind =
+  | Index_int
+  | Index_unboxed_int64
+  | Index_unboxed_int32
+  | Index_unboxed_nativeint
+
+type block_access =
+  | Baccess_field of Longident.t loc
+  | Baccess_array of mutable_flag * index_kind * expression
+  | Baccess_block of mutable_flag * expression
+
+type unboxed_access = Uaccess_unboxed_field of Longident.t loc
+
 module Core_type_desc : sig
   type t =
     | Ptyp_any of jkind_annotation option
@@ -260,7 +273,7 @@ module Expression_desc : sig
   type t =
     | Pexp_ident of Longident.t loc
     | Pexp_constant of constant
-    | Pexp_let of rec_flag * value_binding list * expression
+    | Pexp_let of mutable_flag * rec_flag * value_binding list * expression
     | Pexp_function of
         Pexp_function.function_param list
         * Pexp_function.Function_constraint.t
@@ -279,6 +292,7 @@ module Expression_desc : sig
     | Pexp_unboxed_field of expression * Longident.t loc
     | Pexp_setfield of expression * Longident.t loc * expression
     | Pexp_array of mutable_flag * expression list
+    | Pexp_idx of block_access * unboxed_access list
     | Pexp_ifthenelse of expression * expression * expression option
     | Pexp_sequence of expression * expression
     | Pexp_while of expression * expression
@@ -287,7 +301,7 @@ module Expression_desc : sig
     | Pexp_coerce of expression * core_type option * core_type
     | Pexp_send of expression * label loc
     | Pexp_new of Longident.t loc
-    | Pexp_setinstvar of label loc * expression
+    | Pexp_setvar of label loc * expression
     | Pexp_override of (label loc * expression) list
     | Pexp_letmodule of string option loc * module_expr * expression
     | Pexp_letexception of extension_constructor * expression
