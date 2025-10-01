@@ -141,6 +141,7 @@ module Constant : sig
     | Pconst_integer of string * char option
     | Pconst_unboxed_integer of string * char
     | Pconst_char of char
+    | Pconst_untagged_char of char
     | Pconst_string of string * Location.t * string option
     | Pconst_float of string * char option
     | Pconst_unboxed_float of string * char option
@@ -195,6 +196,8 @@ type index_kind =
   | Index_int
   | Index_unboxed_int64
   | Index_unboxed_int32
+  | Index_unboxed_int16
+  | Index_unboxed_int8
   | Index_unboxed_nativeint
 
 type block_access =

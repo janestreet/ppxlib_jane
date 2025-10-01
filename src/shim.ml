@@ -135,6 +135,7 @@ module Constant = struct
     | Pconst_integer of string * char option
     | Pconst_unboxed_integer of string * char
     | Pconst_char of char
+    | Pconst_untagged_char of char
     | Pconst_string of string * Location.t * string option
     | Pconst_float of string * char option
     | Pconst_unboxed_float of string * char option
@@ -154,6 +155,7 @@ module Constant = struct
     (* Unboxed literal constants erase to boxed literals. *)
     | Pconst_unboxed_integer (a, b) -> Pconst_integer (a, Some b)
     | Pconst_unboxed_float (a, b) -> Pconst_float (a, b)
+    | Pconst_untagged_char a -> Pconst_char a
   ;;
 end
 
@@ -304,6 +306,8 @@ type index_kind =
   | Index_int
   | Index_unboxed_int64
   | Index_unboxed_int32
+  | Index_unboxed_int16
+  | Index_unboxed_int8
   | Index_unboxed_nativeint
 
 type block_access =

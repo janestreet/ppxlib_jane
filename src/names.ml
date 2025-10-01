@@ -24,6 +24,7 @@ module Language_feature_name = struct
     | Pexp_constant c ->
       (match Shim.Constant.of_parsetree c with
        | Pconst_char _ -> "character literal expression"
+       | Pconst_untagged_char _ -> "untagged character literal expression"
        | Pconst_integer _ -> "integer literal expression"
        | Pconst_string _ -> "string literal expression"
        | Pconst_float _ -> "floating point literal expression"
@@ -85,6 +86,7 @@ module Language_feature_name = struct
     | Ppat_constant c ->
       (match Shim.Constant.of_parsetree c with
        | Pconst_char _ -> "character literal pattern"
+       | Pconst_untagged_char _ -> "untagged character literal pattern"
        | Pconst_integer _ -> "integer literal pattern"
        | Pconst_unboxed_integer _ -> "unboxed integer literal pattern"
        | Pconst_string _ -> "string literal pattern"
