@@ -9,6 +9,9 @@ end
 
 module Modalities = struct
   type t = Modality.t loc list
+
+  let none = []
+  let portable ~loc = [ { txt = Modality.Modality "portable"; loc } ]
 end
 
 module Mode = struct
@@ -18,8 +21,8 @@ end
 module Modes = struct
   type t = Mode.t loc list
 
-  let local = [ { txt = Mode.Mode "local"; loc = Location.none } ]
   let none = []
+  let local ~loc = [ { txt = Mode.Mode "local"; loc } ]
 end
 
 module Include_kind = struct
@@ -65,7 +68,6 @@ end
 
 module Value_description = struct
   let extract_modalities vd = [], vd
-  let extract_modalities_with_locs vd = [], vd
 
   let create ~loc ~name ~type_ ~modalities:_ ~prim =
     { pval_loc = loc
@@ -111,12 +113,12 @@ end
 
 module T = struct
   type jkind_annotation_desc =
-    | Default
-    | Abbreviation of string
-    | Mod of jkind_annotation * Modes.t
-    | With of jkind_annotation * core_type * Modalities.t
-    | Kind_of of core_type
-    | Product of jkind_annotation list
+    | Pjk_default
+    | Pjk_abbreviation of string
+    | Pjk_mod of jkind_annotation * Modes.t
+    | Pjk_with of jkind_annotation * core_type * Modalities.t
+    | Pjk_kind_of of core_type
+    | Pjk_product of jkind_annotation list
 
   and jkind_annotation =
     { pjkind_loc : Location.t
@@ -127,6 +129,62 @@ end
 include T
 
 module Type_declaration = struct
+  type t =
+    { ptype_name : string loc
+    ; ptype_params : (core_type * (variance * injectivity)) list
+    ; ptype_cstrs : (core_type * core_type * Location.t) list
+    ; ptype_kind : type_kind
+    ; ptype_private : private_flag
+    ; ptype_manifest : core_type option
+    ; ptype_attributes : attributes
+    ; ptype_jkind_annotation : jkind_annotation option
+    ; ptype_loc : Location.t
+    }
+
+  let to_parsetree : t -> type_declaration =
+    fun { ptype_name
+        ; ptype_params
+        ; ptype_cstrs
+        ; ptype_kind
+        ; ptype_private
+        ; ptype_manifest
+        ; ptype_attributes
+        ; ptype_jkind_annotation = _
+        ; ptype_loc
+        } ->
+    { ptype_name
+    ; ptype_params
+    ; ptype_cstrs
+    ; ptype_kind
+    ; ptype_private
+    ; ptype_manifest
+    ; ptype_attributes
+    ; ptype_loc
+    }
+  ;;
+
+  let of_parsetree : type_declaration -> t =
+    fun { ptype_name
+        ; ptype_params
+        ; ptype_cstrs
+        ; ptype_kind
+        ; ptype_private
+        ; ptype_manifest
+        ; ptype_attributes
+        ; ptype_loc
+        } ->
+    { ptype_name
+    ; ptype_params
+    ; ptype_cstrs
+    ; ptype_kind
+    ; ptype_private
+    ; ptype_manifest
+    ; ptype_attributes
+    ; ptype_jkind_annotation = None
+    ; ptype_loc
+    }
+  ;;
+
   let extract_jkind_annotation _ = None
 end
 
@@ -331,6 +389,8 @@ module Core_type_desc = struct
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
+    | Ptyp_quote of core_type
+    | Ptyp_splice of core_type
     | Ptyp_of_kind of jkind_annotation
     | Ptyp_extension of extension
 
@@ -380,6 +440,8 @@ module Core_type_desc = struct
     | Ptyp_object (a, b) -> Ptyp_object (a, b)
     | Ptyp_class (a, b) -> Ptyp_class (a, b)
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
+    | Ptyp_quote _ -> failwith "[Ptyp_quote] unimplemented in ppxlib_jane"
+    | Ptyp_splice _ -> failwith "[Ptyp_splice] unimplemented in ppxlib_jane"
     | Ptyp_package a -> Ptyp_package a
     | Ptyp_extension a -> Ptyp_extension a
   ;;
@@ -573,6 +635,8 @@ module Expression_desc = struct
     | Pexp_stack of expression
     | Pexp_comprehension of comprehension_expression
     | Pexp_overwrite of expression * expression
+    | Pexp_quote of expression
+    | Pexp_splice of expression
     | Pexp_hole
 
   let to_parsetree : loc:Location.t -> t -> expression_desc =
@@ -651,6 +715,14 @@ module Expression_desc = struct
       Location.raise_errorf
         ~loc
         "[Pexp_overwrite] cannot be converted to an upstream [expression_desc]"
+    | Pexp_quote _ ->
+      Location.raise_errorf
+        ~loc
+        "[Pexp_quote] cannot be converted to an upstream [expression_desc]"
+    | Pexp_splice _ ->
+      Location.raise_errorf
+        ~loc
+        "[Pexp_slice] cannot be converted to an upstream [expression_desc]"
     | Pexp_hole ->
       Pexp_assert
         { pexp_desc = Pexp_construct ({ loc; txt = Lident "false" }, None)
@@ -1034,12 +1106,12 @@ module Ast_traverse = struct
     type location = Location.t
 
     type jkind_annotation_desc = T.jkind_annotation_desc =
-      | Default
-      | Abbreviation of string
-      | Mod of jkind_annotation * modes
-      | With of jkind_annotation * core_type * modalities
-      | Kind_of of core_type
-      | Product of jkind_annotation list
+      | Pjk_default
+      | Pjk_abbreviation of string
+      | Pjk_mod of jkind_annotation * modes
+      | Pjk_with of jkind_annotation * core_type * modalities
+      | Pjk_kind_of of core_type
+      | Pjk_product of jkind_annotation list
 
     and jkind_annotation = T.jkind_annotation =
       { pjkind_loc : location
@@ -1094,25 +1166,25 @@ module Ast_traverse = struct
         method jkind_annotation_desc : jkind_annotation_desc -> jkind_annotation_desc =
           fun x ->
             match x with
-            | Default -> Default
-            | Abbreviation a ->
+            | Pjk_default -> Pjk_default
+            | Pjk_abbreviation a ->
               let a = self#string a in
-              Abbreviation a
-            | Mod (a, b) ->
+              Pjk_abbreviation a
+            | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
               let b = self#modes b in
-              Mod (a, b)
-            | With (a, b, c) ->
+              Pjk_mod (a, b)
+            | Pjk_with (a, b, c) ->
               let a = self#jkind_annotation a in
               let b = self#core_type b in
               let c = self#modalities c in
-              With (a, b, c)
-            | Kind_of a ->
+              Pjk_with (a, b, c)
+            | Pjk_kind_of a ->
               let a = self#core_type a in
-              Kind_of a
-            | Product a ->
+              Pjk_kind_of a
+            | Pjk_product a ->
               let a = self#list self#jkind_annotation a in
-              Product a
+              Pjk_product a
 
         method jkind_annotation : jkind_annotation -> jkind_annotation =
           fun { pjkind_loc; pjkind_desc } ->
@@ -1213,17 +1285,17 @@ module Ast_traverse = struct
         method jkind_annotation_desc : jkind_annotation_desc -> unit =
           fun x ->
             match x with
-            | Default -> ()
-            | Abbreviation a -> self#string a
-            | Mod (a, b) ->
+            | Pjk_default -> ()
+            | Pjk_abbreviation a -> self#string a
+            | Pjk_mod (a, b) ->
               self#jkind_annotation a;
               self#modes b
-            | With (a, b, c) ->
+            | Pjk_with (a, b, c) ->
               self#jkind_annotation a;
               self#core_type b;
               self#modalities c
-            | Kind_of a -> self#core_type a
-            | Product a -> self#list self#jkind_annotation a
+            | Pjk_kind_of a -> self#core_type a
+            | Pjk_product a -> self#list self#jkind_annotation a
 
         method jkind_annotation : jkind_annotation -> unit =
           fun { pjkind_loc; pjkind_desc } ->
@@ -1304,19 +1376,19 @@ module Ast_traverse = struct
         method jkind_annotation_desc : jkind_annotation_desc -> 'acc -> 'acc =
           fun x acc ->
             match x with
-            | Default -> acc
-            | Abbreviation a -> self#string a acc
-            | Mod (a, b) ->
+            | Pjk_default -> acc
+            | Pjk_abbreviation a -> self#string a acc
+            | Pjk_mod (a, b) ->
               let acc = self#jkind_annotation a acc in
               let acc = self#modes b acc in
               acc
-            | With (a, b, c) ->
+            | Pjk_with (a, b, c) ->
               let acc = self#jkind_annotation a acc in
               let acc = self#core_type b acc in
               let acc = self#modalities c acc in
               acc
-            | Kind_of a -> self#core_type a acc
-            | Product a -> self#list self#jkind_annotation a acc
+            | Pjk_kind_of a -> self#core_type a acc
+            | Pjk_product a -> self#list self#jkind_annotation a acc
 
         method jkind_annotation : jkind_annotation -> 'acc -> 'acc =
           fun { pjkind_loc; pjkind_desc } acc ->
@@ -1420,25 +1492,25 @@ module Ast_traverse = struct
           : jkind_annotation_desc -> 'acc -> jkind_annotation_desc * 'acc =
           fun x acc ->
             match x with
-            | Default -> Default, acc
-            | Abbreviation a ->
+            | Pjk_default -> Pjk_default, acc
+            | Pjk_abbreviation a ->
               let a, acc = self#string a acc in
-              Abbreviation a, acc
-            | Mod (a, b) ->
+              Pjk_abbreviation a, acc
+            | Pjk_mod (a, b) ->
               let a, acc = self#jkind_annotation a acc in
               let b, acc = self#modes b acc in
-              Mod (a, b), acc
-            | With (a, b, c) ->
+              Pjk_mod (a, b), acc
+            | Pjk_with (a, b, c) ->
               let a, acc = self#jkind_annotation a acc in
               let b, acc = self#core_type b acc in
               let c, acc = self#modalities c acc in
-              With (a, b, c), acc
-            | Kind_of a ->
+              Pjk_with (a, b, c), acc
+            | Pjk_kind_of a ->
               let a, acc = self#core_type a acc in
-              Kind_of a, acc
-            | Product a ->
+              Pjk_kind_of a, acc
+            | Pjk_product a ->
               let a, acc = self#list self#jkind_annotation a acc in
-              Product a, acc
+              Pjk_product a, acc
 
         method jkind_annotation : jkind_annotation -> 'acc -> jkind_annotation * 'acc =
           fun { pjkind_loc; pjkind_desc } acc ->
@@ -1543,25 +1615,25 @@ module Ast_traverse = struct
           : 'ctx -> jkind_annotation_desc -> jkind_annotation_desc =
           fun ctx x ->
             match x with
-            | Default -> Default
-            | Abbreviation a ->
+            | Pjk_default -> Pjk_default
+            | Pjk_abbreviation a ->
               let a = self#string ctx a in
-              Abbreviation a
-            | Mod (a, b) ->
+              Pjk_abbreviation a
+            | Pjk_mod (a, b) ->
               let a = self#jkind_annotation ctx a in
               let b = self#modes ctx b in
-              Mod (a, b)
-            | With (a, b, c) ->
+              Pjk_mod (a, b)
+            | Pjk_with (a, b, c) ->
               let a = self#jkind_annotation ctx a in
               let b = self#core_type ctx b in
               let c = self#modalities ctx c in
-              With (a, b, c)
-            | Kind_of a ->
+              Pjk_with (a, b, c)
+            | Pjk_kind_of a ->
               let a = self#core_type ctx a in
-              Kind_of a
-            | Product a ->
+              Pjk_kind_of a
+            | Pjk_product a ->
               let a = self#list self#jkind_annotation ctx a in
-              Product a
+              Pjk_product a
 
         method jkind_annotation : 'ctx -> jkind_annotation -> jkind_annotation =
           fun ctx { pjkind_loc; pjkind_desc } ->
@@ -1665,25 +1737,25 @@ module Ast_traverse = struct
         method jkind_annotation_desc : jkind_annotation_desc -> 'res =
           fun x ->
             match x with
-            | Default -> self#constr "Default" []
-            | Abbreviation a ->
+            | Pjk_default -> self#constr "Pjk_default" []
+            | Pjk_abbreviation a ->
               let a = self#string a in
-              self#constr "Abbreviation" [ a ]
-            | Mod (a, b) ->
+              self#constr "Pjk_abbreviation" [ a ]
+            | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
               let b = self#modes b in
-              self#constr "Mod" [ a; b ]
-            | With (a, b, c) ->
+              self#constr "Pjk_mod" [ a; b ]
+            | Pjk_with (a, b, c) ->
               let a = self#jkind_annotation a in
               let b = self#core_type b in
               let c = self#modalities c in
-              self#constr "With" [ a; b; c ]
-            | Kind_of a ->
+              self#constr "Pjk_with" [ a; b; c ]
+            | Pjk_kind_of a ->
               let a = self#core_type a in
-              self#constr "Kind_of" [ a ]
-            | Product a ->
+              self#constr "Pjk_kind_of" [ a ]
+            | Pjk_product a ->
               let a = self#list self#jkind_annotation a in
-              self#constr "Product" [ a ]
+              self#constr "Pjk_product" [ a ]
 
         method jkind_annotation : jkind_annotation -> 'res =
           fun { pjkind_loc; pjkind_desc } ->
@@ -1799,27 +1871,28 @@ module Ast_traverse = struct
           : 'ctx -> jkind_annotation_desc -> jkind_annotation_desc * 'res =
           fun ctx x ->
             match x with
-            | Default -> Default, self#constr ctx "Default" []
-            | Abbreviation a ->
+            | Pjk_default -> Pjk_default, self#constr ctx "Pjk_default" []
+            | Pjk_abbreviation a ->
               let a = self#string ctx a in
-              Abbreviation (Stdlib.fst a), self#constr ctx "Abbreviation" [ Stdlib.snd a ]
-            | Mod (a, b) ->
+              ( Pjk_abbreviation (Stdlib.fst a)
+              , self#constr ctx "Pjk_abbreviation" [ Stdlib.snd a ] )
+            | Pjk_mod (a, b) ->
               let a = self#jkind_annotation ctx a in
               let b = self#modes ctx b in
-              ( Mod (Stdlib.fst a, Stdlib.fst b)
-              , self#constr ctx "Mod" [ Stdlib.snd a; Stdlib.snd b ] )
-            | With (a, b, c) ->
+              ( Pjk_mod (Stdlib.fst a, Stdlib.fst b)
+              , self#constr ctx "Pjk_mod" [ Stdlib.snd a; Stdlib.snd b ] )
+            | Pjk_with (a, b, c) ->
               let a = self#jkind_annotation ctx a in
               let b = self#core_type ctx b in
               let c = self#modalities ctx c in
-              ( With (Stdlib.fst a, Stdlib.fst b, Stdlib.fst c)
-              , self#constr ctx "With" [ Stdlib.snd a; Stdlib.snd b; Stdlib.snd c ] )
-            | Kind_of a ->
+              ( Pjk_with (Stdlib.fst a, Stdlib.fst b, Stdlib.fst c)
+              , self#constr ctx "Pjk_with" [ Stdlib.snd a; Stdlib.snd b; Stdlib.snd c ] )
+            | Pjk_kind_of a ->
               let a = self#core_type ctx a in
-              Kind_of (Stdlib.fst a), self#constr ctx "Kind_of" [ Stdlib.snd a ]
-            | Product a ->
+              Pjk_kind_of (Stdlib.fst a), self#constr ctx "Pjk_kind_of" [ Stdlib.snd a ]
+            | Pjk_product a ->
               let a = self#list self#jkind_annotation ctx a in
-              Product (Stdlib.fst a), self#constr ctx "Product" [ Stdlib.snd a ]
+              Pjk_product (Stdlib.fst a), self#constr ctx "Pjk_product" [ Stdlib.snd a ]
 
         method jkind_annotation : 'ctx -> jkind_annotation -> jkind_annotation * 'res =
           fun ctx { pjkind_loc; pjkind_desc } ->
@@ -1956,7 +2029,7 @@ module Ast_traverse = struct
     end
   end
 
-  module Jane_street_extensions1 (T : sig
+  module Jane_street_extensions0_ctx (T : sig
       type ('a, 'b) t
     end) =
   struct
@@ -1976,7 +2049,27 @@ module Ast_traverse = struct
     end
   end
 
-  module Jane_street_extensions2 (T : sig
+  module Jane_street_extensions1 (T : sig
+      type ('a, 'b) t
+    end) =
+  struct
+    class type ['a] t = object
+      method jkind_annotation : (jkind_annotation, 'a) T.t
+      method jkind_annotation_desc : (jkind_annotation_desc, 'a) T.t
+      method function_body : (Pexp_function.function_body, 'a) T.t
+      method function_param : (Pexp_function.function_param, 'a) T.t
+      method function_param_desc : (Pexp_function.function_param_desc, 'a) T.t
+      method function_constraint : (Pexp_function.Function_constraint.t, 'a) T.t
+      method type_constraint : (Pexp_function.type_constraint, 'a) T.t
+      method mode : (Mode.t, 'a) T.t
+      method modes : (Modes.t, 'a) T.t
+      method modality : (Modality.t, 'a) T.t
+      method modalities : (Modalities.t, 'a) T.t
+      method signature_items : (signature_item list, 'a) T.t
+    end
+  end
+
+  module Jane_street_extensions1_ctx (T : sig
       type ('a, 'b, 'c) t
     end) =
   struct
@@ -2017,6 +2110,10 @@ module Ast_traverse = struct
       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
     end
 
+    module Lift = struct
+      type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.lift
+    end
+
     module Lift_map_with_context = struct
       type ('a, 'b, 'c) t = ('a, 'b, 'c) Ppxlib_traverse_builtins.T.lift_map_with_context
     end
@@ -2050,6 +2147,12 @@ module Ast_traverse = struct
     object
       inherit ['ctx] Ppxlib_ast.Ast.map_with_context
       inherit ['ctx] Deriving_inline.map_with_context
+    end
+
+  class virtual ['res] lift =
+    object
+      inherit ['res] Ppxlib_ast.Ast.lift
+      inherit ['res] Deriving_inline.lift
     end
 
   class virtual ['ctx, 'res] lift_map_with_context =

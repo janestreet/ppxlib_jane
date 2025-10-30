@@ -13,8 +13,20 @@ end
 module Modes : sig
   type t = Mode.t loc list
 
-  val local : t
   val none : t
+  val local : loc:Location.t -> t
+end
+
+module Modality : sig
+  (** The modalities that can go on constructor fields *)
+  type t = Modality of string [@@unboxed]
+end
+
+module Modalities : sig
+  type t = Modality.t loc list
+
+  val none : t
+  val portable : loc:Location.t -> t
 end
 
 module Include_kind : sig
@@ -43,54 +55,44 @@ type arrow_result =
   ; result_type : core_type
   }
 
-module Modality : sig
-  (** The modalities that can go on constructor fields *)
-  type t = Modality of string [@@unboxed]
-end
-
-module Modalities : sig
-  type t = Modality.t loc list
-end
-
 (** A list of this type is stored in the [Pcstr_tuple] constructor of
     [constructor_arguments]. With JS extensions, fields in constructors can contain
     modalities. *)
 module Pcstr_tuple_arg : sig
   type t = core_type
 
-  val extract_modalities : t -> Modality.t list * core_type
+  val extract_modalities : t -> Modalities.t * core_type
   val to_core_type : t -> core_type
   val of_core_type : core_type -> t
   val map_core_type : t -> f:(core_type -> core_type) -> t
   val map_core_type_extra : t -> f:(core_type -> core_type * 'a) -> t * 'a
 
   (** [loc] is ignored if there is no modality. *)
-  val create : loc:Location.t -> modalities:Modality.t list -> type_:core_type -> t
+  val create : loc:Location.t -> modalities:Modalities.t -> type_:core_type -> t
 end
 
 (** This is an interface around the [Parsetree.label_declaration] type, describing one
     label in a record declaration. *)
 module Label_declaration : sig
-  val extract_modalities : label_declaration -> Modality.t list * label_declaration
+  val extract_modalities : label_declaration -> Modalities.t * label_declaration
 
   val create
     :  loc:Location.t
     -> name:string Location.loc
     -> mutable_:mutable_flag
-    -> modalities:Modality.t list
+    -> modalities:Modalities.t
     -> type_:core_type
     -> label_declaration
 end
 
 module Value_description : sig
-  val extract_modalities : value_description -> Modality.t list * value_description
-  val extract_modalities_with_locs : value_description -> Modalities.t * value_description
+  val extract_modalities : value_description -> Modalities.t * value_description
 
   val create
     :  loc:Location.t
     -> name:string Location.loc
     -> type_:core_type
-    -> modalities:Modality.t list
+    -> modalities:Modalities.t
     -> prim:string list
     -> value_description
 end
@@ -120,12 +122,12 @@ module Value_binding : sig
 end
 
 type jkind_annotation_desc =
-  | Default
-  | Abbreviation of string
-  | Mod of jkind_annotation * Modes.t
-  | With of jkind_annotation * core_type * Modality.t loc list
-  | Kind_of of core_type
-  | Product of jkind_annotation list
+  | Pjk_default
+  | Pjk_abbreviation of string
+  | Pjk_mod of jkind_annotation * Modes.t
+  | Pjk_with of jkind_annotation * core_type * Modalities.t
+  | Pjk_kind_of of core_type
+  | Pjk_product of jkind_annotation list
 
 and jkind_annotation =
   { pjkind_loc : Location.t
@@ -133,6 +135,20 @@ and jkind_annotation =
   }
 
 module Type_declaration : sig
+  type t =
+    { ptype_name : string loc
+    ; ptype_params : (core_type * (variance * injectivity)) list
+    ; ptype_cstrs : (core_type * core_type * Location.t) list
+    ; ptype_kind : type_kind
+    ; ptype_private : private_flag
+    ; ptype_manifest : core_type option
+    ; ptype_attributes : attributes
+    ; ptype_jkind_annotation : jkind_annotation option
+    ; ptype_loc : Location.t
+    }
+
+  val of_parsetree : type_declaration -> t
+  val to_parsetree : t -> type_declaration
   val extract_jkind_annotation : type_declaration -> jkind_annotation option
 end
 
@@ -221,6 +237,8 @@ module Core_type_desc : sig
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
     | Ptyp_package of package_type
+    | Ptyp_quote of core_type
+    | Ptyp_splice of core_type
     | Ptyp_of_kind of jkind_annotation
     | Ptyp_extension of extension
 
@@ -321,6 +339,8 @@ module Expression_desc : sig
     | Pexp_stack of expression
     | Pexp_comprehension of comprehension_expression
     | Pexp_overwrite of expression * expression
+    | Pexp_quote of expression
+    | Pexp_splice of expression
     | Pexp_hole
 
   val of_parsetree : expression_desc -> loc:Location.t -> t
@@ -484,7 +504,7 @@ module Ast_traverse : sig
     end
   end
 
-  module Jane_street_extensions1 (T : sig
+  module Jane_street_extensions0_ctx (T : sig
       type ('a, 'b) t
     end) : sig
     class type ['ctx] t = object
@@ -503,7 +523,26 @@ module Ast_traverse : sig
     end
   end
 
-  module Jane_street_extensions2 (T : sig
+  module Jane_street_extensions1 (T : sig
+      type ('a, 'b) t
+    end) : sig
+    class type ['a] t = object
+      method jkind_annotation : (jkind_annotation, 'a) T.t
+      method jkind_annotation_desc : (jkind_annotation_desc, 'a) T.t
+      method function_body : (Pexp_function.function_body, 'a) T.t
+      method function_param : (Pexp_function.function_param, 'a) T.t
+      method function_param_desc : (Pexp_function.function_param_desc, 'a) T.t
+      method function_constraint : (Pexp_function.Function_constraint.t, 'a) T.t
+      method type_constraint : (Pexp_function.type_constraint, 'a) T.t
+      method mode : (Mode.t, 'a) T.t
+      method modes : (Modes.t, 'a) T.t
+      method modality : (Modality.t, 'a) T.t
+      method modalities : (Modalities.t, 'a) T.t
+      method signature_items : (signature_item list, 'a) T.t
+    end
+  end
+
+  module Jane_street_extensions1_ctx (T : sig
       type ('a, 'b, 'c) t
     end) : sig
     class type ['ctx, 'res] t = object
@@ -543,6 +582,10 @@ module Ast_traverse : sig
       type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.map_with_context
     end
 
+    module Lift : sig
+      type ('a, 'b) t = ('a, 'b) Ppxlib_traverse_builtins.T.lift
+    end
+
     module Lift_map_with_context : sig
       type ('a, 'b, 'c) t = ('a, 'b, 'c) Ppxlib_traverse_builtins.T.lift_map_with_context
     end
@@ -560,21 +603,26 @@ module Ast_traverse : sig
 
   class virtual ['ctx] fold : object
     inherit ['ctx] Ppxlib_ast.Ast.fold
-    inherit ['ctx] Jane_street_extensions1(Ts.Fold).t
+    inherit ['ctx] Jane_street_extensions0_ctx(Ts.Fold).t
   end
 
   class virtual ['ctx] fold_map : object
     inherit ['ctx] Ppxlib_ast.Ast.fold_map
-    inherit ['ctx] Jane_street_extensions1(Ts.Fold_map).t
+    inherit ['ctx] Jane_street_extensions0_ctx(Ts.Fold_map).t
   end
 
   class virtual ['ctx] map_with_context : object
     inherit ['ctx] Ppxlib_ast.Ast.map_with_context
-    inherit ['ctx] Jane_street_extensions1(Ts.Map_with_context).t
+    inherit ['ctx] Jane_street_extensions0_ctx(Ts.Map_with_context).t
+  end
+
+  class virtual ['res] lift : object
+    inherit ['res] Ppxlib_ast.Ast.lift
+    inherit ['res] Jane_street_extensions1(Ts.Lift).t
   end
 
   class virtual ['ctx, 'res] lift_map_with_context : object
     inherit ['ctx, 'res] Ppxlib_ast.Ast.lift_map_with_context
-    inherit ['ctx, 'res] Jane_street_extensions2(Ts.Lift_map_with_context).t
+    inherit ['ctx, 'res] Jane_street_extensions1_ctx(Ts.Lift_map_with_context).t
   end
 end
