@@ -114,15 +114,22 @@ end
 module T = struct
   type jkind_annotation_desc =
     | Pjk_default
-    | Pjk_abbreviation of string
+    | Pjk_abbreviation of Longident.t loc
     | Pjk_mod of jkind_annotation * Modes.t
     | Pjk_with of jkind_annotation * core_type * Modalities.t
     | Pjk_kind_of of core_type
     | Pjk_product of jkind_annotation list
 
   and jkind_annotation =
-    { pjkind_loc : Location.t
-    ; pjkind_desc : jkind_annotation_desc
+    { pjka_loc : Location.t
+    ; pjka_desc : jkind_annotation_desc
+    }
+
+  and jkind_declaration =
+    { pjkind_name : string loc
+    ; pjkind_manifest : jkind_annotation option
+    ; pjkind_attributes : attributes
+    ; pjkind_loc : Location.t
     }
 end
 
@@ -392,6 +399,7 @@ module Core_type_desc = struct
     | Ptyp_quote of core_type
     | Ptyp_splice of core_type
     | Ptyp_of_kind of jkind_annotation
+    | Ptyp_repr of string loc list * core_type
     | Ptyp_extension of extension
 
   let of_parsetree : core_type_desc -> t = function
@@ -442,6 +450,7 @@ module Core_type_desc = struct
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_quote _ -> failwith "[Ptyp_quote] unimplemented in ppxlib_jane"
     | Ptyp_splice _ -> failwith "[Ptyp_splice] unimplemented in ppxlib_jane"
+    | Ptyp_repr _ -> failwith "[Ptyp_repr] unimplemented in ppxlib_jane"
     | Ptyp_package a -> Ptyp_package a
     | Ptyp_extension a -> Ptyp_extension a
   ;;
@@ -475,6 +484,8 @@ module Pattern_desc = struct
     | Ppat_alias of pattern * string loc
     | Ppat_constant of constant
     | Ppat_interval of constant * constant
+    | Ppat_unboxed_unit
+    | Ppat_unboxed_bool of bool
     | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
     | Ppat_construct of
@@ -542,6 +553,9 @@ module Pattern_desc = struct
         ~loc
         "Immutable [Ppat_array] cannot be converted to an usptream [pattern_desc]"
     (* new constructors *)
+    | Ppat_unboxed_unit -> Ppat_construct ({ loc; txt = Lident "()" }, None)
+    | Ppat_unboxed_bool b ->
+      Ppat_construct ({ loc; txt = Lident (if b then "true" else "false") }, None)
     | Ppat_unboxed_tuple (_, Open) ->
       Location.raise_errorf
         ~loc
@@ -598,6 +612,8 @@ module Expression_desc = struct
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
+    | Pexp_unboxed_unit
+    | Pexp_unboxed_bool of bool
     | Pexp_tuple of (string option * expression) list
     | Pexp_unboxed_tuple of (string option * expression) list
     | Pexp_construct of Longident.t loc * expression option
@@ -638,6 +654,7 @@ module Expression_desc = struct
     | Pexp_quote of expression
     | Pexp_splice of expression
     | Pexp_hole
+    | Pexp_borrow of expression
 
   let to_parsetree : loc:Location.t -> t -> expression_desc =
     fun ~loc -> function
@@ -657,6 +674,9 @@ module Expression_desc = struct
     | Pexp_record_unboxed_product (x1, x2) -> Pexp_record (x1, x2)
     | Pexp_unboxed_field (x1, x2) -> Pexp_field (x1, x2)
     (* new constructors *)
+    | Pexp_unboxed_unit -> Pexp_construct ({ loc; txt = Lident "()" }, None)
+    | Pexp_unboxed_bool b ->
+      Pexp_construct ({ loc; txt = Lident (if b then "true" else "false") }, None)
     | Pexp_unboxed_tuple labeled_exps ->
       Pexp_tuple (as_unlabeled_tuple_unconditionally labeled_exps)
     | Pexp_idx _ ->
@@ -730,6 +750,14 @@ module Expression_desc = struct
         ; pexp_loc_stack = []
         ; pexp_attributes = []
         }
+    | Pexp_borrow { pexp_desc; pexp_attributes; pexp_loc = _; pexp_loc_stack = _ } ->
+      (match pexp_attributes with
+       | [] -> pexp_desc
+       | _ :: _ ->
+         Location.raise_errorf
+           ~loc
+           "[Pexp_borrow] cannot be converted to an upstream [expression_desc] without \
+            erasing attributes")
   ;;
 
   let of_parsetree (expr_desc : expression_desc) ~loc : t =
@@ -861,7 +889,7 @@ module Signature_item_desc = struct
     | Psig_class_type of class_type_declaration list
     | Psig_attribute of attribute
     | Psig_extension of extension * attributes
-    | Psig_kind_abbrev of string loc * jkind_annotation
+    | Psig_jkind of jkind_declaration
 
   let of_parsetree (sig_desc : signature_item_desc) =
     match sig_desc with
@@ -901,7 +929,7 @@ module Signature_item_desc = struct
     | Psig_class_type a -> Psig_class_type a
     | Psig_attribute a -> Psig_attribute a
     | Psig_extension (a, b) -> Psig_extension (a, b)
-    | Psig_kind_abbrev _ ->
+    | Psig_jkind _ ->
       (* erase to [include sig end] *)
       Psig_include
         { pincl_loc = Location.none
@@ -943,7 +971,7 @@ module Structure_item_desc = struct
     | Pstr_include of include_declaration
     | Pstr_attribute of attribute
     | Pstr_extension of extension * attributes
-    | Pstr_kind_abbrev of string loc * jkind_annotation
+    | Pstr_jkind of jkind_declaration
 
   let of_parsetree : structure_item_desc -> t = function
     | Pstr_eval (a, b) -> Pstr_eval (a, b)
@@ -979,7 +1007,7 @@ module Structure_item_desc = struct
     | Pstr_include a -> Pstr_include a
     | Pstr_attribute a -> Pstr_attribute a
     | Pstr_extension (a, b) -> Pstr_extension (a, b)
-    | Pstr_kind_abbrev _ ->
+    | Pstr_jkind _ ->
       (* erase to [include struct end] *)
       Pstr_include
         { pincl_loc = Location.none
@@ -1104,18 +1132,26 @@ end
 module Ast_traverse = struct
   module Deriving_inline = struct
     type location = Location.t
+    type longident = Longident.t
 
     type jkind_annotation_desc = T.jkind_annotation_desc =
       | Pjk_default
-      | Pjk_abbreviation of string
+      | Pjk_abbreviation of longident loc
       | Pjk_mod of jkind_annotation * modes
       | Pjk_with of jkind_annotation * core_type * modalities
       | Pjk_kind_of of core_type
       | Pjk_product of jkind_annotation list
 
     and jkind_annotation = T.jkind_annotation =
-      { pjkind_loc : location
-      ; pjkind_desc : jkind_annotation_desc
+      { pjka_loc : location
+      ; pjka_desc : jkind_annotation_desc
+      }
+
+    and jkind_declaration = T.jkind_declaration =
+      { pjkind_name : string loc
+      ; pjkind_manifest : jkind_annotation option
+      ; pjkind_attributes : attributes
+      ; pjkind_loc : location
       }
 
     and function_param_desc = Pexp_function.function_param_desc =
@@ -1158,6 +1194,7 @@ module Ast_traverse = struct
         method virtual list : 'a. ('a -> 'a) -> 'a list -> 'a list
         method virtual loc : 'a. ('a -> 'a) -> 'a loc -> 'a loc
         method virtual location : location -> location
+        method virtual longident : longident -> longident
         method virtual option : 'a. ('a -> 'a) -> 'a option -> 'a option
         method virtual pattern : pattern -> pattern
         method virtual signature_item : signature_item -> signature_item
@@ -1168,7 +1205,7 @@ module Ast_traverse = struct
             match x with
             | Pjk_default -> Pjk_default
             | Pjk_abbreviation a ->
-              let a = self#string a in
+              let a = self#loc self#longident a in
               Pjk_abbreviation a
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
@@ -1187,10 +1224,18 @@ module Ast_traverse = struct
               Pjk_product a
 
         method jkind_annotation : jkind_annotation -> jkind_annotation =
-          fun { pjkind_loc; pjkind_desc } ->
+          fun { pjka_loc; pjka_desc } ->
+            let pjka_loc = self#location pjka_loc in
+            let pjka_desc = self#jkind_annotation_desc pjka_desc in
+            { pjka_loc; pjka_desc }
+
+        method jkind_declaration : jkind_declaration -> jkind_declaration =
+          fun { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } ->
+            let pjkind_name = self#loc self#string pjkind_name in
+            let pjkind_manifest = self#option self#jkind_annotation pjkind_manifest in
+            let pjkind_attributes = self#attributes pjkind_attributes in
             let pjkind_loc = self#location pjkind_loc in
-            let pjkind_desc = self#jkind_annotation_desc pjkind_desc in
-            { pjkind_loc; pjkind_desc }
+            { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc }
 
         method function_param_desc : function_param_desc -> function_param_desc =
           fun x ->
@@ -1277,6 +1322,7 @@ module Ast_traverse = struct
         method virtual list : 'a. ('a -> unit) -> 'a list -> unit
         method virtual loc : 'a. ('a -> unit) -> 'a loc -> unit
         method virtual location : location -> unit
+        method virtual longident : longident -> unit
         method virtual option : 'a. ('a -> unit) -> 'a option -> unit
         method virtual pattern : pattern -> unit
         method virtual signature_item : signature_item -> unit
@@ -1286,7 +1332,7 @@ module Ast_traverse = struct
           fun x ->
             match x with
             | Pjk_default -> ()
-            | Pjk_abbreviation a -> self#string a
+            | Pjk_abbreviation a -> self#loc self#longident a
             | Pjk_mod (a, b) ->
               self#jkind_annotation a;
               self#modes b
@@ -1298,9 +1344,16 @@ module Ast_traverse = struct
             | Pjk_product a -> self#list self#jkind_annotation a
 
         method jkind_annotation : jkind_annotation -> unit =
-          fun { pjkind_loc; pjkind_desc } ->
-            self#location pjkind_loc;
-            self#jkind_annotation_desc pjkind_desc
+          fun { pjka_loc; pjka_desc } ->
+            self#location pjka_loc;
+            self#jkind_annotation_desc pjka_desc
+
+        method jkind_declaration : jkind_declaration -> unit =
+          fun { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } ->
+            self#loc self#string pjkind_name;
+            self#option self#jkind_annotation pjkind_manifest;
+            self#attributes pjkind_attributes;
+            self#location pjkind_loc
 
         method function_param_desc : function_param_desc -> unit =
           fun x ->
@@ -1368,6 +1421,7 @@ module Ast_traverse = struct
         method virtual list : 'a. ('a -> 'acc -> 'acc) -> 'a list -> 'acc -> 'acc
         method virtual loc : 'a. ('a -> 'acc -> 'acc) -> 'a loc -> 'acc -> 'acc
         method virtual location : location -> 'acc -> 'acc
+        method virtual longident : longident -> 'acc -> 'acc
         method virtual option : 'a. ('a -> 'acc -> 'acc) -> 'a option -> 'acc -> 'acc
         method virtual pattern : pattern -> 'acc -> 'acc
         method virtual signature_item : signature_item -> 'acc -> 'acc
@@ -1377,7 +1431,7 @@ module Ast_traverse = struct
           fun x acc ->
             match x with
             | Pjk_default -> acc
-            | Pjk_abbreviation a -> self#string a acc
+            | Pjk_abbreviation a -> self#loc self#longident a acc
             | Pjk_mod (a, b) ->
               let acc = self#jkind_annotation a acc in
               let acc = self#modes b acc in
@@ -1391,9 +1445,17 @@ module Ast_traverse = struct
             | Pjk_product a -> self#list self#jkind_annotation a acc
 
         method jkind_annotation : jkind_annotation -> 'acc -> 'acc =
-          fun { pjkind_loc; pjkind_desc } acc ->
+          fun { pjka_loc; pjka_desc } acc ->
+            let acc = self#location pjka_loc acc in
+            let acc = self#jkind_annotation_desc pjka_desc acc in
+            acc
+
+        method jkind_declaration : jkind_declaration -> 'acc -> 'acc =
+          fun { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } acc ->
+            let acc = self#loc self#string pjkind_name acc in
+            let acc = self#option self#jkind_annotation pjkind_manifest acc in
+            let acc = self#attributes pjkind_attributes acc in
             let acc = self#location pjkind_loc acc in
-            let acc = self#jkind_annotation_desc pjkind_desc acc in
             acc
 
         method function_param_desc : function_param_desc -> 'acc -> 'acc =
@@ -1479,6 +1541,7 @@ module Ast_traverse = struct
           : 'a. ('a -> 'acc -> 'a * 'acc) -> 'a loc -> 'acc -> 'a loc * 'acc
 
         method virtual location : location -> 'acc -> location * 'acc
+        method virtual longident : longident -> 'acc -> longident * 'acc
 
         method
           virtual option
@@ -1494,7 +1557,7 @@ module Ast_traverse = struct
             match x with
             | Pjk_default -> Pjk_default, acc
             | Pjk_abbreviation a ->
-              let a, acc = self#string a acc in
+              let a, acc = self#loc self#longident a acc in
               Pjk_abbreviation a, acc
             | Pjk_mod (a, b) ->
               let a, acc = self#jkind_annotation a acc in
@@ -1513,10 +1576,20 @@ module Ast_traverse = struct
               Pjk_product a, acc
 
         method jkind_annotation : jkind_annotation -> 'acc -> jkind_annotation * 'acc =
-          fun { pjkind_loc; pjkind_desc } acc ->
+          fun { pjka_loc; pjka_desc } acc ->
+            let pjka_loc, acc = self#location pjka_loc acc in
+            let pjka_desc, acc = self#jkind_annotation_desc pjka_desc acc in
+            { pjka_loc; pjka_desc }, acc
+
+        method jkind_declaration : jkind_declaration -> 'acc -> jkind_declaration * 'acc =
+          fun { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } acc ->
+            let pjkind_name, acc = self#loc self#string pjkind_name acc in
+            let pjkind_manifest, acc =
+              self#option self#jkind_annotation pjkind_manifest acc
+            in
+            let pjkind_attributes, acc = self#attributes pjkind_attributes acc in
             let pjkind_loc, acc = self#location pjkind_loc acc in
-            let pjkind_desc, acc = self#jkind_annotation_desc pjkind_desc acc in
-            { pjkind_loc; pjkind_desc }, acc
+            { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc }, acc
 
         method function_param_desc
           : function_param_desc -> 'acc -> function_param_desc * 'acc =
@@ -1606,6 +1679,7 @@ module Ast_traverse = struct
         method virtual list : 'a. ('ctx -> 'a -> 'a) -> 'ctx -> 'a list -> 'a list
         method virtual loc : 'a. ('ctx -> 'a -> 'a) -> 'ctx -> 'a loc -> 'a loc
         method virtual location : 'ctx -> location -> location
+        method virtual longident : 'ctx -> longident -> longident
         method virtual option : 'a. ('ctx -> 'a -> 'a) -> 'ctx -> 'a option -> 'a option
         method virtual pattern : 'ctx -> pattern -> pattern
         method virtual signature_item : 'ctx -> signature_item -> signature_item
@@ -1617,7 +1691,7 @@ module Ast_traverse = struct
             match x with
             | Pjk_default -> Pjk_default
             | Pjk_abbreviation a ->
-              let a = self#string ctx a in
+              let a = self#loc self#longident ctx a in
               Pjk_abbreviation a
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation ctx a in
@@ -1636,10 +1710,18 @@ module Ast_traverse = struct
               Pjk_product a
 
         method jkind_annotation : 'ctx -> jkind_annotation -> jkind_annotation =
-          fun ctx { pjkind_loc; pjkind_desc } ->
+          fun ctx { pjka_loc; pjka_desc } ->
+            let pjka_loc = self#location ctx pjka_loc in
+            let pjka_desc = self#jkind_annotation_desc ctx pjka_desc in
+            { pjka_loc; pjka_desc }
+
+        method jkind_declaration : 'ctx -> jkind_declaration -> jkind_declaration =
+          fun ctx { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } ->
+            let pjkind_name = self#loc self#string ctx pjkind_name in
+            let pjkind_manifest = self#option self#jkind_annotation ctx pjkind_manifest in
+            let pjkind_attributes = self#attributes ctx pjkind_attributes in
             let pjkind_loc = self#location ctx pjkind_loc in
-            let pjkind_desc = self#jkind_annotation_desc ctx pjkind_desc in
-            { pjkind_loc; pjkind_desc }
+            { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc }
 
         method function_param_desc : 'ctx -> function_param_desc -> function_param_desc =
           fun ctx x ->
@@ -1729,6 +1811,7 @@ module Ast_traverse = struct
         method virtual list : 'a. ('a -> 'res) -> 'a list -> 'res
         method virtual loc : 'a. ('a -> 'res) -> 'a loc -> 'res
         method virtual location : location -> 'res
+        method virtual longident : longident -> 'res
         method virtual option : 'a. ('a -> 'res) -> 'a option -> 'res
         method virtual pattern : pattern -> 'res
         method virtual signature_item : signature_item -> 'res
@@ -1739,7 +1822,7 @@ module Ast_traverse = struct
             match x with
             | Pjk_default -> self#constr "Pjk_default" []
             | Pjk_abbreviation a ->
-              let a = self#string a in
+              let a = self#loc self#longident a in
               self#constr "Pjk_abbreviation" [ a ]
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
@@ -1758,10 +1841,23 @@ module Ast_traverse = struct
               self#constr "Pjk_product" [ a ]
 
         method jkind_annotation : jkind_annotation -> 'res =
-          fun { pjkind_loc; pjkind_desc } ->
+          fun { pjka_loc; pjka_desc } ->
+            let pjka_loc = self#location pjka_loc in
+            let pjka_desc = self#jkind_annotation_desc pjka_desc in
+            self#record [ "pjka_loc", pjka_loc; "pjka_desc", pjka_desc ]
+
+        method jkind_declaration : jkind_declaration -> 'res =
+          fun { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } ->
+            let pjkind_name = self#loc self#string pjkind_name in
+            let pjkind_manifest = self#option self#jkind_annotation pjkind_manifest in
+            let pjkind_attributes = self#attributes pjkind_attributes in
             let pjkind_loc = self#location pjkind_loc in
-            let pjkind_desc = self#jkind_annotation_desc pjkind_desc in
-            self#record [ "pjkind_loc", pjkind_loc; "pjkind_desc", pjkind_desc ]
+            self#record
+              [ "pjkind_name", pjkind_name
+              ; "pjkind_manifest", pjkind_manifest
+              ; "pjkind_attributes", pjkind_attributes
+              ; "pjkind_loc", pjkind_loc
+              ]
 
         method function_param_desc : function_param_desc -> 'res =
           fun x ->
@@ -1858,6 +1954,7 @@ module Ast_traverse = struct
           : 'a. ('ctx -> 'a -> 'a * 'res) -> 'ctx -> 'a loc -> 'a loc * 'res
 
         method virtual location : 'ctx -> location -> location * 'res
+        method virtual longident : 'ctx -> longident -> longident * 'res
 
         method
           virtual option
@@ -1873,7 +1970,7 @@ module Ast_traverse = struct
             match x with
             | Pjk_default -> Pjk_default, self#constr ctx "Pjk_default" []
             | Pjk_abbreviation a ->
-              let a = self#string ctx a in
+              let a = self#loc self#longident ctx a in
               ( Pjk_abbreviation (Stdlib.fst a)
               , self#constr ctx "Pjk_abbreviation" [ Stdlib.snd a ] )
             | Pjk_mod (a, b) ->
@@ -1895,14 +1992,31 @@ module Ast_traverse = struct
               Pjk_product (Stdlib.fst a), self#constr ctx "Pjk_product" [ Stdlib.snd a ]
 
         method jkind_annotation : 'ctx -> jkind_annotation -> jkind_annotation * 'res =
-          fun ctx { pjkind_loc; pjkind_desc } ->
-            let pjkind_loc = self#location ctx pjkind_loc in
-            let pjkind_desc = self#jkind_annotation_desc ctx pjkind_desc in
-            ( { pjkind_loc = Stdlib.fst pjkind_loc; pjkind_desc = Stdlib.fst pjkind_desc }
+          fun ctx { pjka_loc; pjka_desc } ->
+            let pjka_loc = self#location ctx pjka_loc in
+            let pjka_desc = self#jkind_annotation_desc ctx pjka_desc in
+            ( { pjka_loc = Stdlib.fst pjka_loc; pjka_desc = Stdlib.fst pjka_desc }
             , self#record
                 ctx
-                [ "pjkind_loc", Stdlib.snd pjkind_loc
-                ; "pjkind_desc", Stdlib.snd pjkind_desc
+                [ "pjka_loc", Stdlib.snd pjka_loc; "pjka_desc", Stdlib.snd pjka_desc ] )
+
+        method jkind_declaration : 'ctx -> jkind_declaration -> jkind_declaration * 'res =
+          fun ctx { pjkind_name; pjkind_manifest; pjkind_attributes; pjkind_loc } ->
+            let pjkind_name = self#loc self#string ctx pjkind_name in
+            let pjkind_manifest = self#option self#jkind_annotation ctx pjkind_manifest in
+            let pjkind_attributes = self#attributes ctx pjkind_attributes in
+            let pjkind_loc = self#location ctx pjkind_loc in
+            ( { pjkind_name = Stdlib.fst pjkind_name
+              ; pjkind_manifest = Stdlib.fst pjkind_manifest
+              ; pjkind_attributes = Stdlib.fst pjkind_attributes
+              ; pjkind_loc = Stdlib.fst pjkind_loc
+              }
+            , self#record
+                ctx
+                [ "pjkind_name", Stdlib.snd pjkind_name
+                ; "pjkind_manifest", Stdlib.snd pjkind_manifest
+                ; "pjkind_attributes", Stdlib.snd pjkind_attributes
+                ; "pjkind_loc", Stdlib.snd pjkind_loc
                 ] )
 
         method function_param_desc
@@ -2014,6 +2128,7 @@ module Ast_traverse = struct
     end) =
   struct
     class type t = object
+      method jkind_declaration : jkind_declaration T.t
       method jkind_annotation : jkind_annotation T.t
       method jkind_annotation_desc : jkind_annotation_desc T.t
       method function_body : Pexp_function.function_body T.t
@@ -2034,6 +2149,7 @@ module Ast_traverse = struct
     end) =
   struct
     class type ['ctx] t = object
+      method jkind_declaration : ('ctx, jkind_declaration) T.t
       method jkind_annotation : ('ctx, jkind_annotation) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
       method function_body : ('ctx, Pexp_function.function_body) T.t
@@ -2054,6 +2170,7 @@ module Ast_traverse = struct
     end) =
   struct
     class type ['a] t = object
+      method jkind_declaration : (jkind_declaration, 'a) T.t
       method jkind_annotation : (jkind_annotation, 'a) T.t
       method jkind_annotation_desc : (jkind_annotation_desc, 'a) T.t
       method function_body : (Pexp_function.function_body, 'a) T.t
@@ -2074,6 +2191,7 @@ module Ast_traverse = struct
     end) =
   struct
     class type ['ctx, 'res] t = object
+      method jkind_declaration : ('ctx, jkind_declaration, 'res) T.t
       method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
       method function_body : ('ctx, Pexp_function.function_body, 'res) T.t

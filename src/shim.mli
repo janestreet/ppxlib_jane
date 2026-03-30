@@ -123,15 +123,22 @@ end
 
 type jkind_annotation_desc =
   | Pjk_default
-  | Pjk_abbreviation of string
+  | Pjk_abbreviation of Longident.t loc
   | Pjk_mod of jkind_annotation * Modes.t
   | Pjk_with of jkind_annotation * core_type * Modalities.t
   | Pjk_kind_of of core_type
   | Pjk_product of jkind_annotation list
 
 and jkind_annotation =
-  { pjkind_loc : Location.t
-  ; pjkind_desc : jkind_annotation_desc
+  { pjka_loc : Location.t
+  ; pjka_desc : jkind_annotation_desc
+  }
+
+and jkind_declaration =
+  { pjkind_name : string loc
+  ; pjkind_manifest : jkind_annotation option
+  ; pjkind_attributes : attributes
+  ; pjkind_loc : Location.t
   }
 
 module Type_declaration : sig
@@ -240,6 +247,7 @@ module Core_type_desc : sig
     | Ptyp_quote of core_type
     | Ptyp_splice of core_type
     | Ptyp_of_kind of jkind_annotation
+    | Ptyp_repr of string loc list * core_type
     | Ptyp_extension of extension
 
   val of_parsetree : core_type_desc -> t
@@ -265,6 +273,8 @@ module Pattern_desc : sig
     | Ppat_alias of pattern * string loc
     | Ppat_constant of constant
     | Ppat_interval of constant * constant
+    | Ppat_unboxed_unit
+    | Ppat_unboxed_bool of bool
     | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
     | Ppat_construct of
@@ -302,6 +312,8 @@ module Expression_desc : sig
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
+    | Pexp_unboxed_unit
+    | Pexp_unboxed_bool of bool
     | Pexp_tuple of (string option * expression) list
     | Pexp_unboxed_tuple of (string option * expression) list
     | Pexp_construct of Longident.t loc * expression option
@@ -342,6 +354,7 @@ module Expression_desc : sig
     | Pexp_quote of expression
     | Pexp_splice of expression
     | Pexp_hole
+    | Pexp_borrow of expression
 
   val of_parsetree : expression_desc -> loc:Location.t -> t
   val to_parsetree : loc:Location.t -> t -> expression_desc
@@ -403,7 +416,7 @@ module Signature_item_desc : sig
     | Psig_class_type of class_type_declaration list
     | Psig_attribute of attribute
     | Psig_extension of extension * attributes
-    | Psig_kind_abbrev of string loc * jkind_annotation
+    | Psig_jkind of jkind_declaration
 
   val of_parsetree : signature_item_desc -> t
   val to_parsetree : t -> signature_item_desc
@@ -437,7 +450,7 @@ module Structure_item_desc : sig
     | Pstr_include of include_declaration
     | Pstr_attribute of attribute
     | Pstr_extension of extension * attributes
-    | Pstr_kind_abbrev of string loc * jkind_annotation
+    | Pstr_jkind of jkind_declaration
 
   val of_parsetree : structure_item_desc -> t
   val to_parsetree : t -> structure_item_desc
@@ -489,6 +502,7 @@ module Ast_traverse : sig
       type 'a t
     end) : sig
     class type t = object
+      method jkind_declaration : jkind_declaration T.t
       method jkind_annotation : jkind_annotation T.t
       method jkind_annotation_desc : jkind_annotation_desc T.t
       method function_body : Pexp_function.function_body T.t
@@ -508,6 +522,7 @@ module Ast_traverse : sig
       type ('a, 'b) t
     end) : sig
     class type ['ctx] t = object
+      method jkind_declaration : ('ctx, jkind_declaration) T.t
       method jkind_annotation : ('ctx, jkind_annotation) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
       method function_body : ('ctx, Pexp_function.function_body) T.t
@@ -527,6 +542,7 @@ module Ast_traverse : sig
       type ('a, 'b) t
     end) : sig
     class type ['a] t = object
+      method jkind_declaration : (jkind_declaration, 'a) T.t
       method jkind_annotation : (jkind_annotation, 'a) T.t
       method jkind_annotation_desc : (jkind_annotation_desc, 'a) T.t
       method function_body : (Pexp_function.function_body, 'a) T.t
@@ -546,6 +562,7 @@ module Ast_traverse : sig
       type ('a, 'b, 'c) t
     end) : sig
     class type ['ctx, 'res] t = object
+      method jkind_declaration : ('ctx, jkind_declaration, 'res) T.t
       method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
       method function_body : ('ctx, Pexp_function.function_body, 'res) T.t
