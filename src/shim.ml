@@ -114,7 +114,7 @@ end
 module T = struct
   type jkind_annotation_desc =
     | Pjk_default
-    | Pjk_abbreviation of Longident.t loc
+    | Pjk_abbreviation of Longident.t loc * string loc list
     | Pjk_mod of jkind_annotation * Modes.t
     | Pjk_with of jkind_annotation * core_type * Modalities.t
     | Pjk_kind_of of core_type
@@ -367,17 +367,8 @@ let as_unlabeled_tuple components =
 
 let as_unlabeled_tuple_unconditionally components = List.map snd components
 
-type index_kind =
-  | Index_int
-  | Index_unboxed_int64
-  | Index_unboxed_int32
-  | Index_unboxed_int16
-  | Index_unboxed_int8
-  | Index_unboxed_nativeint
-
 type block_access =
   | Baccess_field of Longident.t loc
-  | Baccess_array of mutable_flag * index_kind * expression
   | Baccess_block of mutable_flag * expression
 
 type unboxed_access = Uaccess_unboxed_field of Longident.t loc
@@ -395,6 +386,7 @@ module Core_type_desc = struct
     | Ptyp_alias of core_type * string loc option * jkind_annotation option
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
+    | Ptyp_newlayout of string loc list * core_type
     | Ptyp_package of package_type
     | Ptyp_quote of core_type
     | Ptyp_splice of core_type
@@ -450,6 +442,7 @@ module Core_type_desc = struct
     | Ptyp_variant (a, b, c) -> Ptyp_variant (a, b, c)
     | Ptyp_quote _ -> failwith "[Ptyp_quote] unimplemented in ppxlib_jane"
     | Ptyp_splice _ -> failwith "[Ptyp_splice] unimplemented in ppxlib_jane"
+    | Ptyp_newlayout _ -> failwith "[Ptyp_newlayout] unimplemented in ppxlib_jane"
     | Ptyp_repr _ -> failwith "[Ptyp_repr] unimplemented in ppxlib_jane"
     | Ptyp_package a -> Ptyp_package a
     | Ptyp_extension a -> Ptyp_extension a
@@ -1136,7 +1129,7 @@ module Ast_traverse = struct
 
     type jkind_annotation_desc = T.jkind_annotation_desc =
       | Pjk_default
-      | Pjk_abbreviation of longident loc
+      | Pjk_abbreviation of longident loc * string loc list
       | Pjk_mod of jkind_annotation * modes
       | Pjk_with of jkind_annotation * core_type * modalities
       | Pjk_kind_of of core_type
@@ -1204,9 +1197,10 @@ module Ast_traverse = struct
           fun x ->
             match x with
             | Pjk_default -> Pjk_default
-            | Pjk_abbreviation a ->
+            | Pjk_abbreviation (a, b) ->
               let a = self#loc self#longident a in
-              Pjk_abbreviation a
+              let b = self#list (self#loc self#string) b in
+              Pjk_abbreviation (a, b)
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
               let b = self#modes b in
@@ -1332,7 +1326,9 @@ module Ast_traverse = struct
           fun x ->
             match x with
             | Pjk_default -> ()
-            | Pjk_abbreviation a -> self#loc self#longident a
+            | Pjk_abbreviation (a, b) ->
+              self#loc self#longident a;
+              self#list (self#loc self#string) b
             | Pjk_mod (a, b) ->
               self#jkind_annotation a;
               self#modes b
@@ -1431,7 +1427,10 @@ module Ast_traverse = struct
           fun x acc ->
             match x with
             | Pjk_default -> acc
-            | Pjk_abbreviation a -> self#loc self#longident a acc
+            | Pjk_abbreviation (a, b) ->
+              let acc = self#loc self#longident a acc in
+              let acc = self#list (self#loc self#string) b acc in
+              acc
             | Pjk_mod (a, b) ->
               let acc = self#jkind_annotation a acc in
               let acc = self#modes b acc in
@@ -1556,9 +1555,10 @@ module Ast_traverse = struct
           fun x acc ->
             match x with
             | Pjk_default -> Pjk_default, acc
-            | Pjk_abbreviation a ->
+            | Pjk_abbreviation (a, b) ->
               let a, acc = self#loc self#longident a acc in
-              Pjk_abbreviation a, acc
+              let b, acc = self#list (self#loc self#string) b acc in
+              Pjk_abbreviation (a, b), acc
             | Pjk_mod (a, b) ->
               let a, acc = self#jkind_annotation a acc in
               let b, acc = self#modes b acc in
@@ -1690,9 +1690,10 @@ module Ast_traverse = struct
           fun ctx x ->
             match x with
             | Pjk_default -> Pjk_default
-            | Pjk_abbreviation a ->
+            | Pjk_abbreviation (a, b) ->
               let a = self#loc self#longident ctx a in
-              Pjk_abbreviation a
+              let b = self#list (self#loc self#string) ctx b in
+              Pjk_abbreviation (a, b)
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation ctx a in
               let b = self#modes ctx b in
@@ -1821,9 +1822,10 @@ module Ast_traverse = struct
           fun x ->
             match x with
             | Pjk_default -> self#constr "Pjk_default" []
-            | Pjk_abbreviation a ->
+            | Pjk_abbreviation (a, b) ->
               let a = self#loc self#longident a in
-              self#constr "Pjk_abbreviation" [ a ]
+              let b = self#list (self#loc self#string) b in
+              self#constr "Pjk_abbreviation" [ a; b ]
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation a in
               let b = self#modes b in
@@ -1969,10 +1971,11 @@ module Ast_traverse = struct
           fun ctx x ->
             match x with
             | Pjk_default -> Pjk_default, self#constr ctx "Pjk_default" []
-            | Pjk_abbreviation a ->
+            | Pjk_abbreviation (a, b) ->
               let a = self#loc self#longident ctx a in
-              ( Pjk_abbreviation (Stdlib.fst a)
-              , self#constr ctx "Pjk_abbreviation" [ Stdlib.snd a ] )
+              let b = self#list (self#loc self#string) ctx b in
+              ( Pjk_abbreviation (Stdlib.fst a, Stdlib.fst b)
+              , self#constr ctx "Pjk_abbreviation" [ Stdlib.snd a; Stdlib.snd b ] )
             | Pjk_mod (a, b) ->
               let a = self#jkind_annotation ctx a in
               let b = self#modes ctx b in
