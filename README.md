@@ -1,5 +1,4 @@
-'`ppxlib_jane`'
-===============
+# `ppxlib_jane`
 
 A library for use in ppxes for constructing and matching on ASTs corresponding to the
 augmented parsetree that is recognized by the [Jane Street OCaml compiler][JaneStreetOCaml].

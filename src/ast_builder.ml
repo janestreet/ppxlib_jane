@@ -10,7 +10,6 @@ module Default = struct
 
   type function_param = Shim.Pexp_function.function_param
   type function_constraint = Shim.Pexp_function.Function_constraint.t
-  type function_body = Shim.Pexp_function.function_body
 
   let mktyp ~loc ?(attrs = []) ptyp_desc =
     { ptyp_loc_stack = []; ptyp_attributes = attrs; ptyp_loc = loc; ptyp_desc }
@@ -160,9 +159,9 @@ module Default = struct
     }
   ;;
 
-  let unary_function ~loc ?(attrs = []) cases =
+  let pexp_function_cases ~loc cases =
     pexp_function
-      ~attrs
+      ~attrs:[]
       ~params:[]
       ~constraint_:Shim.Pexp_function.Function_constraint.none
       ~body:(Pfunction_cases (cases, loc, []))
@@ -175,8 +174,7 @@ module Default = struct
 
   let function_constraint type_constraint : function_constraint =
     { Shim.Pexp_function.Function_constraint.none with
-      ret_type_constraint =
-        Option.map ~f:(fun x -> Pexp_function.Pconstraint x) type_constraint
+      ret_type_constraint = Option.map ~f:(fun x -> Pconstraint x) type_constraint
     }
   ;;
 
@@ -232,32 +230,6 @@ module Default = struct
       ~loc
       [ { pparam_desc = Pparam_val (lbl, def, pat); pparam_loc = pat.ppat_loc } ]
       body
-  ;;
-
-  let coalesce_fun_arity ast =
-    match Shim.Pexp_function.of_parsetree ast.pexp_desc ~loc:ast.pexp_loc with
-    | None | Some (_, _, Pfunction_cases _) -> ast
-    | Some (params, constraint_, body)
-      when not (Shim.Pexp_function.Function_constraint.is_none constraint_) ->
-      pexp_function
-        ~params
-        ~constraint_
-        ~body
-        ~loc:ast.pexp_loc
-        ~attrs:ast.pexp_attributes
-    | Some (params1, _, Pfunction_body ({ pexp_attributes = []; _ } as outer_body)) ->
-      (match
-         Shim.Pexp_function.of_parsetree outer_body.pexp_desc ~loc:outer_body.pexp_loc
-       with
-       | Some (params2, constraint_, inner_body) ->
-         pexp_function
-           ~params:(params1 @ params2)
-           ~constraint_
-           ~body:inner_body
-           ~loc:ast.pexp_loc
-           ~attrs:ast.pexp_attributes
-       | None -> ast)
-    | Some _ -> ast
   ;;
 
   let eabstract ~loc ?(coalesce_fun_arity = true) ?return_constraint pats body =
@@ -493,8 +465,8 @@ struct
       ()
   ;;
 
-  let value_binding ~pat ~expr ~modes : value_binding =
-    value_binding ~loc ~pat ~expr ~modes
+  let value_binding ~pat ~expr ~constraint_ ~modes : value_binding =
+    value_binding ~loc ~pat ~expr ~constraint_ ~modes
   ;;
 
   let pcstr_tuple fields : constructor_arguments = pcstr_tuple ~loc fields
@@ -533,7 +505,7 @@ struct
   ;;
 
   let fun_param a b : function_param = fun_param ~loc a b
-  let unary_function ?attrs a : expression = unary_function ~loc ?attrs a
+  let pexp_function_cases a : expression = pexp_function_cases ~loc a
 
   let add_fun_param ?attrs ?return_constraint a b c d : expression =
     add_fun_param ~loc ?attrs ?return_constraint a b c d

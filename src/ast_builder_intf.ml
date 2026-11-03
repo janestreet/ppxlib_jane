@@ -40,9 +40,14 @@ module type S = sig
   (** Construct a [Ppat_constraint] with modes *)
   val ppat_constraint : (pattern -> core_type option -> modes -> pattern) with_loc
 
-  (** Contruct a [value_binding] with modes *)
+  (** Construct a [value_binding] with modes *)
   val value_binding
-    : (pat:pattern -> expr:expression -> modes:modes -> value_binding) with_loc
+    : (pat:pattern
+       -> expr:expression
+       -> constraint_:value_constraint option
+       -> modes:modes
+       -> value_binding)
+        with_loc
 
   (** Construct a [Pcstr_tuple], a representation for the contents of a tupled variant
       constructor, that attaches the provided modalities to each field. *)
@@ -155,7 +160,6 @@ module type S = sig
 
   type function_param = Shim.Pexp_function.function_param
   type function_constraint = Shim.Pexp_function.Function_constraint.t
-  type function_body = Shim.Pexp_function.function_body
 
   module Latest : sig
     (** Avoid shadowing Ppxlib's AST builder. *)
@@ -194,16 +198,11 @@ module type S = sig
        -> expression)
         with_loc
 
-  (** [unary_function cases] is [function <cases>]. When used with the Jane Street
-      compiler, the function's runtime arity is 1, so the fast path for function
-      application happens only when application sites of the resulting function receive 1
-      argument. To create a function with multiple argument that pattern-matches on the
-      last one, use [add_param] or [add_params] to add more parameters. Alternatively, use
-      [pexp_function] to provide all parameters at once.
-
-      The attributes of the resulting expression will be the [attrs] argument together
-      with any attributes added by the Jane Street compiler. *)
-  val unary_function : (?attrs:attributes -> case list -> expression) with_loc
+  (** [pexp_function_cases] builds a unary function expression in the shape
+      [function C1 -> E1 | ...]. To create a function with multiple argument that
+      pattern-matches on the last one, use [add_param] or [add_params] to add more
+      parameters. Alternatively, use [pexp_function] to provide all parameters at once. *)
+  val pexp_function_cases : (case list -> expression) with_loc
 
   (** [fun_param lbl pat] is [Pparam_val (lbl, None, pat)]. This gives a more
       self-documenting way of constructing the usual case: value parameters without
@@ -243,16 +242,6 @@ module type S = sig
        -> expression
        -> expression)
         with_loc
-
-  (** This operation is a no-op, except as interpreted by the Jane Street compiler. If [e]
-      is a function with arity [n] with an expression body that itself is a function with
-      arity [m], then [coalesce_fun_arity e] is a function of arity [n + m].
-
-      You should usually call [coalesce_fun_arity] on metaquot fun expressions whose body
-      may be a function, e.g.:
-
-      [coalesce_fun_arity [%expr fun x y -> [%e possibly_function]]] *)
-  val coalesce_fun_arity : expression -> expression
 
   (** {2 Unboxed types} *)
 
