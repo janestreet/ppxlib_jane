@@ -5,6 +5,18 @@ open Ppxlib_ast.Parsetree
 (** This file can have a different implementation in the Jane Street experimental compiler
     and the upstream compiler, allowing ppxes to easily work with both versions *)
 
+module Longident : sig
+  type t = Ast_504.Longident.t =
+    | Lident of string
+    | Ldot of t loc * string loc
+    | Lapply of t loc * t loc
+
+  val flatten : t -> string list
+  val parse : string -> t
+  val to_parsetree : t -> Longident.t
+  val of_parsetree : Longident.t -> t
+end
+
 module Mode : sig
   (** The modes that can go on function arguments or return types *)
   type t = Mode of string [@@unboxed]
@@ -117,13 +129,15 @@ module Value_binding : sig
     :  loc:Location.t
     -> pat:pattern
     -> expr:expression
+    -> constraint_:value_constraint option
     -> modes:Modes.t
     -> value_binding
 end
 
 type jkind_annotation_desc =
   | Pjk_default
-  | Pjk_abbreviation of Longident.t loc * string loc list
+  | Pjk_abbreviation of Astlib.Longident.t loc
+  | Pjk_operator of jkind_annotation * string loc list
   | Pjk_mod of jkind_annotation * Modes.t
   | Pjk_with of jkind_annotation * core_type * Modalities.t
   | Pjk_kind_of of core_type
@@ -184,10 +198,6 @@ module Pexp_function : sig
     ; pparam_desc : function_param_desc
     }
 
-  type type_constraint =
-    | Pconstraint of core_type
-    | Pcoerce of core_type option * core_type
-
   module Function_constraint : sig
     type t =
       { mode_annotations : Modes.t
@@ -198,10 +208,6 @@ module Pexp_function : sig
     val none : t
     val is_none : t -> bool
   end
-
-  type function_body =
-    | Pfunction_body of expression
-    | Pfunction_cases of case list * Location.t * attributes
 
   val to_parsetree
     :  params:function_param list
@@ -215,11 +221,16 @@ module Pexp_function : sig
     -> (function_param list * Function_constraint.t * function_body) option
 end
 
-type block_access =
-  | Baccess_field of Longident.t loc
-  | Baccess_block of mutable_flag * expression
+type nonrec access_flag =
+  | Immutable_access
+  | Mutable_access
+  | Atomic_access
 
-type unboxed_access = Uaccess_unboxed_field of Longident.t loc
+type block_access =
+  | Baccess_field of Astlib.Longident.t loc
+  | Baccess_block of access_flag * expression
+
+type unboxed_access = Uaccess_unboxed_field of Astlib.Longident.t loc
 
 module Core_type_desc : sig
   type t =
@@ -228,9 +239,9 @@ module Core_type_desc : sig
     | Ptyp_arrow of arg_label * core_type * core_type * Modes.t * Modes.t
     | Ptyp_tuple of (string option * core_type) list
     | Ptyp_unboxed_tuple of (string option * core_type) list
-    | Ptyp_constr of Longident.t loc * core_type list
+    | Ptyp_constr of Astlib.Longident.t loc * core_type list
     | Ptyp_object of object_field list * closed_flag
-    | Ptyp_class of Longident.t loc * core_type list
+    | Ptyp_class of Astlib.Longident.t loc * core_type list
     | Ptyp_alias of core_type * string loc option * jkind_annotation option
     | Ptyp_variant of row_field list * closed_flag * label list option
     | Ptyp_poly of (string loc * jkind_annotation option) list * core_type
@@ -270,19 +281,20 @@ module Pattern_desc : sig
     | Ppat_tuple of (string option * pattern) list * closed_flag
     | Ppat_unboxed_tuple of (string option * pattern) list * closed_flag
     | Ppat_construct of
-        Longident.t loc * ((string loc * jkind_annotation option) list * pattern) option
+        Astlib.Longident.t loc
+        * ((string loc * jkind_annotation option) list * pattern) option
     | Ppat_variant of label * pattern option
-    | Ppat_record of (Longident.t loc * pattern) list * closed_flag
-    | Ppat_record_unboxed_product of (Longident.t loc * pattern) list * closed_flag
+    | Ppat_record of (Astlib.Longident.t loc * pattern) list * closed_flag
+    | Ppat_record_unboxed_product of (Astlib.Longident.t loc * pattern) list * closed_flag
     | Ppat_array of mutable_flag * pattern list
     | Ppat_or of pattern * pattern
     | Ppat_constraint of pattern * core_type option * Modes.t
-    | Ppat_type of Longident.t loc
+    | Ppat_type of Astlib.Longident.t loc
     | Ppat_lazy of pattern
     | Ppat_unpack of string option loc
     | Ppat_exception of pattern
     | Ppat_extension of extension
-    | Ppat_open of Longident.t loc * pattern
+    | Ppat_open of Astlib.Longident.t loc * pattern
 
   val of_parsetree : pattern_desc -> t
   val to_parsetree : loc:Location.t -> t -> pattern_desc
@@ -294,13 +306,13 @@ module Expression_desc : sig
     | Pcomp_array_comprehension of unit
 
   type t =
-    | Pexp_ident of Longident.t loc
+    | Pexp_ident of Astlib.Longident.t loc
     | Pexp_constant of constant
     | Pexp_let of mutable_flag * rec_flag * value_binding list * expression
     | Pexp_function of
         Pexp_function.function_param list
         * Pexp_function.Function_constraint.t
-        * Pexp_function.function_body
+        * function_body
     | Pexp_apply of expression * (arg_label * expression) list
     | Pexp_match of expression * case list
     | Pexp_try of expression * case list
@@ -308,14 +320,14 @@ module Expression_desc : sig
     | Pexp_unboxed_bool of bool
     | Pexp_tuple of (string option * expression) list
     | Pexp_unboxed_tuple of (string option * expression) list
-    | Pexp_construct of Longident.t loc * expression option
+    | Pexp_construct of Astlib.Longident.t loc * expression option
     | Pexp_variant of label * expression option
-    | Pexp_record of (Longident.t loc * expression) list * expression option
+    | Pexp_record of (Astlib.Longident.t loc * expression) list * expression option
     | Pexp_record_unboxed_product of
-        (Longident.t loc * expression) list * expression option
-    | Pexp_field of expression * Longident.t loc
-    | Pexp_unboxed_field of expression * Longident.t loc
-    | Pexp_setfield of expression * Longident.t loc * expression
+        (Astlib.Longident.t loc * expression) list * expression option
+    | Pexp_field of expression * Astlib.Longident.t loc
+    | Pexp_unboxed_field of expression * Astlib.Longident.t loc
+    | Pexp_setfield of expression * Astlib.Longident.t loc * expression
     | Pexp_array of mutable_flag * expression list
     | Pexp_idx of block_access * unboxed_access list
     | Pexp_ifthenelse of expression * expression * expression option
@@ -325,7 +337,7 @@ module Expression_desc : sig
     | Pexp_constraint of expression * core_type option * Modes.t
     | Pexp_coerce of expression * core_type option * core_type
     | Pexp_send of expression * label loc
-    | Pexp_new of Longident.t loc
+    | Pexp_new of Astlib.Longident.t loc
     | Pexp_setvar of label loc * expression
     | Pexp_override of (label loc * expression) list
     | Pexp_letmodule of string option loc * module_expr * expression
@@ -459,14 +471,14 @@ end
 
 module Module_type_desc : sig
   type t =
-    | Pmty_ident of Longident.t loc
+    | Pmty_ident of Astlib.Longident.t loc
     | Pmty_signature of signature
     | Pmty_functor of functor_parameter * module_type * Modes.t
     | Pmty_with of module_type * with_constraint list
     | Pmty_typeof of module_expr
     | Pmty_extension of extension
-    | Pmty_alias of Longident.t loc
-    | Pmty_strengthen of module_type * Longident.t loc
+    | Pmty_alias of Astlib.Longident.t loc
+    | Pmty_strengthen of module_type * Astlib.Longident.t loc
 
   val of_parsetree : module_type_desc -> t
   val to_parsetree : loc:Location.t -> t -> module_type_desc
@@ -476,10 +488,11 @@ module Module_expr_desc : sig
   type module_instance = private Module_instance
 
   type t =
-    | Pmod_ident of Longident.t loc
+    | Pmod_ident of Astlib.Longident.t loc
     | Pmod_structure of structure
     | Pmod_functor of functor_parameter * module_expr
     | Pmod_apply of module_expr * module_expr
+    | Pmod_apply_unit of module_expr
     | Pmod_constraint of module_expr * module_type option * Modes.t
     | Pmod_unpack of expression
     | Pmod_extension of extension
@@ -497,11 +510,9 @@ module Ast_traverse : sig
       method jkind_declaration : jkind_declaration T.t
       method jkind_annotation : jkind_annotation T.t
       method jkind_annotation_desc : jkind_annotation_desc T.t
-      method function_body : Pexp_function.function_body T.t
-      method function_param : Pexp_function.function_param T.t
-      method function_param_desc : Pexp_function.function_param_desc T.t
+      method function_body : function_body T.t
       method function_constraint : Pexp_function.Function_constraint.t T.t
-      method type_constraint : Pexp_function.type_constraint T.t
+      method type_constraint : type_constraint T.t
       method mode : Mode.t T.t
       method modes : Modes.t T.t
       method modality : Modality.t T.t
@@ -517,11 +528,9 @@ module Ast_traverse : sig
       method jkind_declaration : ('ctx, jkind_declaration) T.t
       method jkind_annotation : ('ctx, jkind_annotation) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc) T.t
-      method function_body : ('ctx, Pexp_function.function_body) T.t
-      method function_param : ('ctx, Pexp_function.function_param) T.t
-      method function_param_desc : ('ctx, Pexp_function.function_param_desc) T.t
+      method function_body : ('ctx, function_body) T.t
       method function_constraint : ('ctx, Pexp_function.Function_constraint.t) T.t
-      method type_constraint : ('ctx, Pexp_function.type_constraint) T.t
+      method type_constraint : ('ctx, type_constraint) T.t
       method mode : ('ctx, Mode.t) T.t
       method modes : ('ctx, Modes.t) T.t
       method modality : ('ctx, Modality.t) T.t
@@ -537,11 +546,9 @@ module Ast_traverse : sig
       method jkind_declaration : (jkind_declaration, 'a) T.t
       method jkind_annotation : (jkind_annotation, 'a) T.t
       method jkind_annotation_desc : (jkind_annotation_desc, 'a) T.t
-      method function_body : (Pexp_function.function_body, 'a) T.t
-      method function_param : (Pexp_function.function_param, 'a) T.t
-      method function_param_desc : (Pexp_function.function_param_desc, 'a) T.t
+      method function_body : (function_body, 'a) T.t
       method function_constraint : (Pexp_function.Function_constraint.t, 'a) T.t
-      method type_constraint : (Pexp_function.type_constraint, 'a) T.t
+      method type_constraint : (type_constraint, 'a) T.t
       method mode : (Mode.t, 'a) T.t
       method modes : (Modes.t, 'a) T.t
       method modality : (Modality.t, 'a) T.t
@@ -557,11 +564,9 @@ module Ast_traverse : sig
       method jkind_declaration : ('ctx, jkind_declaration, 'res) T.t
       method jkind_annotation : ('ctx, jkind_annotation, 'res) T.t
       method jkind_annotation_desc : ('ctx, jkind_annotation_desc, 'res) T.t
-      method function_body : ('ctx, Pexp_function.function_body, 'res) T.t
-      method function_param : ('ctx, Pexp_function.function_param, 'res) T.t
-      method function_param_desc : ('ctx, Pexp_function.function_param_desc, 'res) T.t
+      method function_body : ('ctx, function_body, 'res) T.t
       method function_constraint : ('ctx, Pexp_function.Function_constraint.t, 'res) T.t
-      method type_constraint : ('ctx, Pexp_function.type_constraint, 'res) T.t
+      method type_constraint : ('ctx, type_constraint, 'res) T.t
       method mode : ('ctx, Mode.t, 'res) T.t
       method modes : ('ctx, Modes.t, 'res) T.t
       method modality : ('ctx, Modality.t, 'res) T.t
